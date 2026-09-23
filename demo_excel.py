@@ -234,9 +234,55 @@ class Excel:
                       interval=interval, waitTime=0.1)
         STATS["keys"] += 1
 
+    def cell_mode(self):
+        """Excel's own status-bar word: Ready / Enter / Edit / Point."""
+        ctrl = getattr(self, "_mode_ctrl", None)
+        if ctrl is not None:
+            try:
+                name = ctrl.Name or ""
+                if name.startswith("Cell Mode"):
+                    return name.replace("Cell Mode", "").strip()
+            except Exception:
+                pass
+        self._mode_ctrl = None
+        try:
+            for c, _d in auto.WalkControl(self.w, maxDepth=9):
+                if (c.Name or "").startswith("Cell Mode"):
+                    self._mode_ctrl = c
+                    return c.Name.replace("Cell Mode", "").strip()
+        except Exception:
+            pass
+        return ""
+
+    def wait_ready(self, timeout=20):
+        """Poll until Excel reports Ready. Right after a paste, an auto-fit or a
+        200-row fill it is still busy, and a copy taken then comes back empty."""
+        deadline = time.time() + timeout
+        escaped = False
+        while True:
+            mode = self.cell_mode()
+            if mode in ("Ready", ""):
+                return
+            if time.time() > deadline:
+                if escaped:
+                    raise RuntimeError(f"Excel stayed in {mode!r} mode instead of Ready")
+                self.keys("{Esc}", wait=0.3)
+                escaped, deadline = True, time.time() + 5
+            time.sleep(0.2)
+
+    def name_box(self):
+        nb = getattr(self, "_name_box", None)
+        if nb is None or not nb.Exists(0):
+            nb = self.w.EditControl(Name="Name Box", searchDepth=6)
+            if not nb.Exists(20):
+                raise RuntimeError("Excel's Name Box did not appear within 20s")
+            self._name_box = nb
+        return nb
+
     def goto(self, ref):
         self.guard()
-        self.w.EditControl(Name="Name Box", searchDepth=6).SetFocus()
+        self.wait_ready()
+        self.name_box().SetFocus()
         self.keys("{Ctrl}a", wait=0.05)
         self.text(ref, interval=0.01)
         self.keys("{Enter}", wait=0.2)
@@ -252,18 +298,43 @@ class Excel:
         self.keys("{Ctrl}v", wait=0.8)
         self.keys("{Esc}", wait=0.1)
 
+    @staticmethod
+    def clipboard():
+        try:
+            return auto.GetClipboardText() or ""
+        except Exception:                     # another program holds the clipboard
+            return ""
+
     def read(self, ref):
-        """What Excel DISPLAYS for a range, read back via the clipboard."""
-        self.goto(ref)
-        auto.SetClipboardText("")
-        self.keys("{Ctrl}c", wait=0.3)
-        deadline = time.time() + 3
-        txt = ""
-        while time.time() < deadline and not txt:
-            txt = auto.GetClipboardText()
-            time.sleep(0.1)
-        self.keys("{Esc}", wait=0.05)
-        return [line.split("\t") for line in txt.replace("\r", "").strip("\n").split("\n")]
+        """What Excel DISPLAYS for a range, read back via the clipboard.
+
+        An empty clipboard is never taken as an answer: Excel may still have been
+        busy, or another program may have held the clipboard for a moment. The copy
+        is retried, and a read that stays empty stops the demo with that reason."""
+        for attempt in range(4):
+            self.goto(ref)
+            if ":" not in ref:
+                at = self.name_box().GetValuePattern().Value
+                if at.upper() != ref.upper():
+                    info(f"Name Box shows {at!r}, not {ref!r} - navigating again")
+                    continue
+            try:
+                auto.SetClipboardText("")
+            except Exception:
+                pass
+            self.keys("{Ctrl}c", wait=0.3 + 0.3 * attempt)
+            deadline = time.time() + 3
+            txt = ""
+            while time.time() < deadline and not txt.strip():
+                txt = self.clipboard()
+                time.sleep(0.1)
+            self.keys("{Esc}", wait=0.05)
+            if txt.strip():
+                return [line.split("\t") for line in txt.replace("\r", "").strip("\n").split("\n")]
+            info(f"reading {ref}: the clipboard came back empty, retrying ({attempt + 1}/3)")
+            time.sleep(0.5 * (attempt + 1))
+        raise RuntimeError(f"could not read {ref} back from Excel - the copy stayed empty 4 times "
+                           "(Excel busy, or another program holding the clipboard)")
 
     def rename_sheet(self, name):
         self.keys("{Alt}hor", wait=0.4)
@@ -318,7 +389,11 @@ class Excel:
 
 
 def num(s):
-    return float(s.replace(",", "").replace("%", "").strip())
+    cleaned = (s or "").replace(",", "").replace("%", "").strip()
+    try:
+        return float(cleaned)
+    except ValueError:
+        raise RuntimeError(f"expected a number from Excel but read {s!r}") from None
 
 
 # ---------------------------------------------------------------------------
