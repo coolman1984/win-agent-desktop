@@ -83,6 +83,15 @@ drift.
 - Chromium builds the web tree lazily; if a page shows only a few elements, wait a second
   and snapshot again, or `click` inside the page once.
 
+## Old-style apps (WinForms, VB6, Delphi, MFC)
+
+- Controls that only speak the old accessibility API (MSAA) show up with few patterns:
+  a WinForms drop-down given an accessible name has no expand action and no option
+  elements. wad handles it: `select` walks the list with Home/Down while reading the
+  shown value, `expand`/`collapse` use Alt+Down/Alt+Up, and `get` reads the old
+  checked/expanded state. The AutomationId of a WinForms control is its `Name` in code
+  (`aid=nameBox`) - usually the most stable selector.
+
 ## Win32 menus and context menus
 
 - Menu bar: `click "role=MenuItem name=File"` opens it; the menu is a popup window:

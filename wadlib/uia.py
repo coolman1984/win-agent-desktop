@@ -184,11 +184,30 @@ def is_interactive(ctrl, pats):
         set(pats) & {"invoke", "toggle", "select", "expand"})
 
 
+# MSAA state bits, for controls that only speak the old accessibility API
+STATE_CHECKED, STATE_EXPANDED, STATE_COLLAPSED = 0x10, 0x200, 0x400
+
+
+def legacy_of(ctrl):
+    try:
+        return ctrl.GetPattern(auto.PatternId.LegacyIAccessiblePattern)
+    except Exception:
+        return None
+
+
 def value_of(ctrl):
     vp = ctrl.GetPattern(auto.PatternId.ValuePattern)
     if vp:
         try:
             return vp.Value
+        except Exception:
+            return None
+    # A WinForms control given an AccessibleName (also VB6, Delphi, old MFC) answers only
+    # through MSAA: no Value pattern, but its accValue is the shown text or selection.
+    lp = legacy_of(ctrl)
+    if lp:
+        try:
+            return lp.Value or None
         except Exception:
             return None
     return None
@@ -233,6 +252,16 @@ def states_of(ctrl):
             out["selected"] = bool(si.IsSelected)
         except Exception:
             pass
+    if "expanded" not in out or "toggle" not in out:
+        lp = legacy_of(ctrl)
+        try:
+            st = lp.State if lp else 0
+        except Exception:
+            st = 0
+        if "expanded" not in out and st & (STATE_EXPANDED | STATE_COLLAPSED):
+            out["expanded"] = bool(st & STATE_EXPANDED)
+        if "toggle" not in out and role_of(ctrl) in ("CheckBox", "RadioButton") and lp:
+            out["toggle"] = "on" if st & STATE_CHECKED else "off"
     return out
 
 

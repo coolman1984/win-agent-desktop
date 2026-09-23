@@ -41,6 +41,8 @@ def app(monkeypatch):
     def press(code, waitTime=0):
         fake_uia.LOG.append(("press", (code,)))
         target = fake_uia.FOCUS[0]
+        if target is not None and hasattr(target, "on_key"):
+            target.on_key(code)
         vp = target.GetPattern(fake_uia.PatternId.ValuePattern) if target else None
         if vp is not None and code == ord("A") and any(
                 e == ("press", (fake_uia.Keys.VK_CONTROL,)) for e in fake_uia.LOG[-2:]):

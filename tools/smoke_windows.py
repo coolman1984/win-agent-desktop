@@ -250,9 +250,11 @@ def forms_submit():
 def forms_hover_and_ocr_click():
     wad("hover", "role=Button name=Submit", "--window", APP)
     wad("type", "aid=nameBox", "Second", "--window", APP)
+    seen = wad("ocr", "--window", APP, "--find", "Submit", "--lang", "en")["matches"]
     out = wad("click-text", "Submit", "--window", APP, "--expect", "Submitted: Second",
-              "--lang", "en")
-    return f"clicked at ({out['screen_x']}, {out['screen_y']})"
+              "--lang", "en", ok=False)
+    assert out.get("ok"), f"{out} - OCR saw {seen}"
+    return f"clicked {out['text']!r} at ({out['screen_x']}, {out['screen_y']})"
 
 
 def forms_close():

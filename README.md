@@ -85,6 +85,11 @@ All 47 commands: [docs/COMMANDS.md](docs/COMMANDS.md). In PowerShell write refs 
   the layout.
 - Copying OUT of Office can come back empty to other programs on a managed PC even
   though pasting in works. Read cells from the grid or COM instead.
+- A WinForms drop-down with an accessible name speaks only the old MSAA API: no expand
+  action, no option elements. Picking an option means walking it with the keyboard and
+  reading the shown value after each step - which is what `select` falls back to.
+- OCR finds "Submit" inside "Submitted:" too; a whole-word match must win, or the click
+  lands on the label instead of the button.
 - An app running as administrator is invisible to a non-elevated automation process
   (UIPI); its tree comes back almost empty. wad says so instead of guessing.
 

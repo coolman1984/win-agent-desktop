@@ -188,6 +188,15 @@ class Scroll:
         self.HorizontalScrollPercent = min(100, max(0, self.HorizontalScrollPercent + step[h]))
 
 
+class Legacy:
+    """MSAA only (LegacyIAccessible): what a WinForms control with an AccessibleName shows."""
+    def __init__(self, value="", state=0):
+        self.Value, self.State = value, state
+
+    def DoDefaultAction(self):
+        pass
+
+
 class Window:
     def __init__(self, ctrl):
         self.ctrl = ctrl
@@ -252,11 +261,29 @@ def build():
                           patterns={PatternId.ValuePattern: Value("")}))
     lst = main.add(Control("List", "Items", patterns={PatternId.ScrollPattern: Scroll()}))
     lst.add(Control("ListItem", "row 1", patterns={PatternId.SelectionItemPattern: SelectionItem()}))
+    # a WinForms-style drop-down list: no ExpandCollapse, no option elements, only MSAA
+    colors = ["Red", "Green", "Blue"]
+    legacy = Legacy("Red", state=0x400)
+    msaa = main.add(Control("ComboBox", "Color", patterns={
+        PatternId.LegacyIAccessiblePattern: legacy}))
+
+    def on_key(code):
+        i = colors.index(legacy.Value)
+        if code == Keys.VK_HOME:
+            legacy.Value = colors[0]
+        elif code == Keys.VK_DOWN and LOG[-2:-1] == [("press", (Keys.VK_MENU,))]:
+            legacy.State = 0x200                      # alt+down opens the list
+        elif code == Keys.VK_UP and LOG[-2:-1] == [("press", (Keys.VK_MENU,))]:
+            legacy.State = 0x400
+        elif code == Keys.VK_DOWN:
+            legacy.Value = colors[min(i + 1, len(colors) - 1)]
+    msaa.on_key = on_key
     ROOT.add(main)
     other = Control("Window", "Other App", hwnd=2001, pid=200)
     ROOT.add(other)
     parts.update(main=main, doc=doc, save=save, noop=noop, wrap=wrap, combo=combo, dead=dead,
-                 ok1=ok1, ok2=ok2, liar=liar, pw=pw, list=lst, other=other)
+                 ok1=ok1, ok2=ok2, liar=liar, pw=pw, list=lst, other=other, msaa=msaa,
+                 legacy=legacy)
     return parts
 
 

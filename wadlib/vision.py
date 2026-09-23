@@ -242,6 +242,8 @@ def find_text(lines, text, nth=1):
                          "center": [round((x0 + x1) / 2), round((y0 + y1) / 2)]})
         else:                       # the text spans OCR's word split oddly: use the line
             hits.append({"text": ln["text"], "line": ln["text"], "center": ln["center"]})
+    # a whole-word match beats a word that merely contains it ("Submit" vs "Submitted:")
+    hits.sort(key=lambda h: 0 if h["text"].lower().strip(" :.,") == want else 1)
     if not hits:
         return None, hits
     return (hits[nth - 1] if nth <= len(hits) else None), hits

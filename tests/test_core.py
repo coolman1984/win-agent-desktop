@@ -241,3 +241,24 @@ def test_typing_verification_waits_for_a_slow_app(app, run, monkeypatch):
     run("snapshot", "--window", "Notepad")
     out = run("type", "name=Cell", "مرحبا بكم", "--keys")
     assert out["ok"] and out["verified"] is True
+
+
+def test_select_in_an_msaa_only_combo_walks_with_the_keyboard(app, run):
+    """Real WinForms (a ComboBox with an AccessibleName) exposes no options and no
+    ExpandCollapse - found by the Windows CI run. wad reads the value while pressing Down."""
+    run("snapshot", "--window", "Notepad")
+    out = run("select", "role=ComboBox name=Color", "blue")
+    assert out["ok"] and out["via"] == "keys" and out["option"] == "Blue"
+    assert app["legacy"].Value == "Blue"
+    bad = run("select", "role=ComboBox name=Color", "Purple")
+    assert bad["code"] == "OPTION_NOT_FOUND" and "'Green'" in bad["hint"]
+
+
+def test_expand_msaa_combo_with_keys_and_read_legacy_state(app, run):
+    run("snapshot", "--window", "Notepad")
+    assert run("get", "role=ComboBox name=Color")["expanded"] is False
+    out = run("expand", "role=ComboBox name=Color")
+    assert out["ok"] and out["via"] == "keys"
+    assert run("get", "role=ComboBox name=Color")["expanded"] is True
+    assert run("collapse", "role=ComboBox name=Color")["ok"]
+    assert app["legacy"].State == 0x400

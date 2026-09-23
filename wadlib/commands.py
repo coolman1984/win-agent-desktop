@@ -554,18 +554,34 @@ def cmd_uncheck(args):
 def _set_expanded(args, want):
     ctrl, el, _, hwnd = target(args)
     ec = ctrl.GetPattern(auto.PatternId.ExpandCollapsePattern)
-    if not ec:
+    word = "expanded" if want else "collapsed"
+    before = verify.observe(ctrl, hwnd)
+    if ec:
+        (ec.Expand if want else ec.Collapse)()
+        deadline = time.time() + 2
+        while time.time() < deadline and (ec.ExpandCollapseState in (1, 2)) != want:
+            time.sleep(0.1)
+        how = "pattern"
+    elif el["role"] == "ComboBox":
+        # MSAA-only combo boxes (WinForms with an AccessibleName) have no ExpandCollapse;
+        # Alt+Down / Alt+Up is the keyboard's own way to open and close the list.
+        if uia.states_of(ctrl).get("expanded") == want:
+            return ok(ref=el["ref"], state=word, **where(el, hwnd)), f"{el['ref']} already {word}"
+        inputs.guard(hwnd)
+        ctrl.SetFocus()
+        inputs.press_chord([auto.Keys.VK_MENU, auto.Keys.VK_DOWN if want else auto.Keys.VK_UP])
+        now = verify.read_until(lambda: uia.states_of(ctrl).get("expanded"),
+                                lambda v: v is None or v == want, timeout=1.5)
+        if now is not None and now != want:
+            raise WadError("VERIFY_FAILED", f"{el['ref']} did not become {word}",
+                           "try `click --headed` on its arrow")
+        how = "keys"
+    else:
         raise WadError("NOT_EXPANDABLE", f"{el['ref']} {el['role']} cannot expand/collapse",
                        "for a menu use `click`; for a sub-menu try its accelerator key")
-    before = verify.observe(ctrl, hwnd)
-    (ec.Expand if want else ec.Collapse)()
-    deadline = time.time() + 2
-    while time.time() < deadline and (ec.ExpandCollapseState in (1, 2)) != want:
-        time.sleep(0.1)
     changes = verify.settle(ctrl, hwnd, before, wait=0.3)
-    word = "expanded" if want else "collapsed"
-    return (ok(ref=el["ref"], state=word, changes=changes, **where(el, hwnd)),
-            act_line(word, el, word, changes, True))
+    return (ok(ref=el["ref"], state=word, via=how, changes=changes, **where(el, hwnd)),
+            act_line(word, el, how, changes, True))
 
 
 @command("expand", "open a combo box, tree item, menu or ribbon drop-down", target_arg(),
@@ -616,6 +632,10 @@ def cmd_select(args):
     exact = [c for c in items if c.Name.lower() == want]
     part = [c for c in items if want in c.Name.lower()]
     pick = (exact or part or [None])[0]
+    if pick is None and not items and el["role"] == "ComboBox":
+        if opened:
+            ec.Collapse()
+        return _select_by_keys(args, ctrl, el, hwnd)
     if pick is None:
         if opened:
             ec.Collapse()
@@ -638,6 +658,51 @@ def cmd_select(args):
     state.trace("select", {"target": el["ref"], "option": pick.Name})
     return (ok(ref=el["ref"], option=pick.Name, value=shown, **where(el, hwnd)),
             f"selected {pick.Name!r} in {el['ref']} {el['role']} {el['name']!r}")
+
+
+def _select_by_keys(args, ctrl, el, hwnd):
+    """For combo boxes that expose no options (MSAA-only: WinForms with an AccessibleName,
+    VB6, Delphi): walk the list with the keyboard, reading the shown value at each step,
+    exactly as a person would with Home and Down."""
+    want = args.option.lower()
+    read = lambda: (uia.value_of(ctrl) or "").strip()
+    edit = next((c for c in ctrl.GetChildren() if c.ControlTypeName == "EditControl"
+                 and c.GetPattern(auto.PatternId.ValuePattern)), None)
+    if edit is not None:                    # an editable combo takes the text itself
+        edit.GetPattern(auto.PatternId.ValuePattern).SetValue(args.option)
+        if read().lower() == want or (uia.value_of(edit) or "").lower() == want:
+            return (ok(ref=el["ref"], option=args.option, value=read(), via="edit",
+                       **where(el, hwnd)),
+                    f"set {el['ref']} {el['role']} {el['name']!r} to {args.option!r}")
+    inputs.guard(hwnd)
+    ctrl.SetFocus()
+    inputs.press_chord([auto.Keys.VK_HOME])
+    seen = [verify.read_until(read, bool, timeout=0.5)]
+    if not seen[0]:
+        raise WadError("OPTION_NOT_FOUND", f"{el['ref']} shows no value to read",
+                       "open it with `click --headed` and pick with `click-text`")
+    while seen[-1].lower() != want and len(seen) < 500:
+        inputs.press_chord([auto.Keys.VK_DOWN])
+        prev = seen[-1]
+        cur = verify.read_until(read, lambda v: v != prev, timeout=0.4)
+        if cur == prev:                      # the end of the list
+            break
+        seen.append(cur)
+    idx = next((i for i, v in enumerate(seen) if v.lower() == want),
+               next((i for i, v in enumerate(seen) if want in v.lower()), None))
+    if idx is None:
+        raise WadError("OPTION_NOT_FOUND", f"no option like {args.option!r}",
+                       "options: " + ", ".join(repr(v) for v in seen[:15]))
+    if seen[-1] != seen[idx]:                # overshot while looking for an exact match
+        inputs.press_chord([auto.Keys.VK_HOME])
+        for _ in range(idx):
+            inputs.press_chord([auto.Keys.VK_DOWN])
+    shown = verify.read_until(read, lambda v: v == seen[idx], timeout=1.0)
+    if shown != seen[idx]:
+        raise WadError("VERIFY_FAILED", f"{seen[idx]!r} was not selected (shows {shown!r})")
+    state.trace("select", {"target": el["ref"], "option": shown, "via": "keys"})
+    return (ok(ref=el["ref"], option=shown, value=shown, via="keys", **where(el, hwnd)),
+            f"selected {shown!r} in {el['ref']} {el['role']} {el['name']!r} via keys")
 
 
 @command("focus", "give keyboard focus to an element, or bring a window to the front",

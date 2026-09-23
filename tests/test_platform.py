@@ -251,3 +251,13 @@ def test_every_error_code_is_documented_for_agents():
         doc = fh.read()
     missing = sorted(c for c in codes if f"`{c}`" not in doc)
     assert not missing, f"document these in references/errors.md: {missing}"
+
+
+def test_ocr_prefers_the_whole_word():
+    lines = [{"text": "Submitted: Ahmed", "center": [80, 300], "words": [
+                 {"text": "Submitted:", "box": [0, 290, 90, 20]},
+                 {"text": "Ahmed", "box": [100, 290, 60, 20]}]},
+             {"text": "Submit", "center": [60, 250], "words": [
+                 {"text": "Submit", "box": [30, 240, 60, 20]}]}]
+    hit, _ = vision.find_text(lines, "Submit")
+    assert hit["center"] == [60, 250]
