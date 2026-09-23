@@ -298,43 +298,32 @@ class Excel:
         self.keys("{Ctrl}v", wait=0.8)
         self.keys("{Esc}", wait=0.1)
 
-    @staticmethod
-    def clipboard():
-        try:
-            return auto.GetClipboardText() or ""
-        except Exception:                     # another program holds the clipboard
-            return ""
-
     def read(self, ref):
-        """What Excel DISPLAYS for a range, read back via the clipboard.
+        """What Excel DISPLAYS for a range, read straight from the grid's cells.
 
-        An empty clipboard is never taken as an answer: Excel may still have been
-        busy, or another program may have held the clipboard for a moment. The copy
-        is retried, and a read that stays empty stops the demo with that reason."""
-        for attempt in range(4):
-            self.goto(ref)
-            if ":" not in ref:
-                at = self.name_box().GetValuePattern().Value
-                if at.upper() != ref.upper():
-                    info(f"Name Box shows {at!r}, not {ref!r} - navigating again")
-                    continue
-            try:
-                auto.SetClipboardText("")
-            except Exception:
-                pass
-            self.keys("{Ctrl}c", wait=0.3 + 0.3 * attempt)
-            deadline = time.time() + 3
-            txt = ""
-            while time.time() < deadline and not txt.strip():
-                txt = self.clipboard()
-                time.sleep(0.1)
-            self.keys("{Esc}", wait=0.05)
-            if txt.strip():
-                return [line.split("\t") for line in txt.replace("\r", "").strip("\n").split("\n")]
-            info(f"reading {ref}: the clipboard came back empty, retrying ({attempt + 1}/3)")
-            time.sleep(0.5 * (attempt + 1))
-        raise RuntimeError(f"could not read {ref} back from Excel - the copy stayed empty 4 times "
-                           "(Excel busy, or another program holding the clipboard)")
+        Each visible cell is a DataItem whose value is its displayed text (formatted
+        formula results included). Not the clipboard: on a managed PC, copying OUT of
+        Office can come back empty to other programs even though pasting in works.
+        Going to the range first scrolls it into view, so its cells are in the tree."""
+        self.goto(ref)
+        self.wait_ready()
+        first, _, last = ref.upper().partition(":")
+        last = last or first
+        c1, r1 = re.match(r"([A-Z]+)(\d+)", first).groups()
+        c2, r2 = re.match(r"([A-Z]+)(\d+)", last).groups()
+        cols = [chr(c) for c in range(ord(c1), ord(c2) + 1)]
+        grid = self.w.DataGridControl(AutomationId="Grid", searchDepth=12)
+        rows = []
+        for r in range(int(r1), int(r2) + 1):
+            row = []
+            for col in cols:
+                cell = grid.DataItemControl(AutomationId=f"{col}{r}", searchDepth=1)
+                if not cell.Exists(5):
+                    raise RuntimeError(f"cell {col}{r} is not in Excel's accessibility tree")
+                vp = cell.GetPattern(auto.PatternId.ValuePattern)
+                row.append((vp.Value if vp else "") or "")
+            rows.append(row)
+        return rows
 
     def rename_sheet(self, name):
         self.keys("{Alt}hor", wait=0.4)
@@ -411,7 +400,10 @@ def main():
     print("   The demo only ever types into its OWN Excel window, and pauses if you switch away.")
     time.sleep(3)
 
-    saved_clip = auto.GetClipboardText()
+    try:
+        saved_clip = auto.GetClipboardText()
+    except Exception:
+        saved_clip = None
     rows = make_orders()
     want = truth(rows)
     xl = Excel()
@@ -643,7 +635,8 @@ def main():
         return 2
     finally:
         try:
-            auto.SetClipboardText(saved_clip or "")
+            if saved_clip is not None:
+                auto.SetClipboardText(saved_clip)
         except Exception:
             pass
 
