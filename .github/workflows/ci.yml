@@ -23,6 +23,7 @@ jobs:
   real-desktop:
     # The real thing: Windows, real UI Automation, real Notepad, real OCR.
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
