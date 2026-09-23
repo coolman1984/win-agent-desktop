@@ -214,3 +214,30 @@ def test_internal_errors_do_not_crash(app, run, monkeypatch):
     monkeypatch.setattr(uia, "top_windows", boom)
     out = run("windows")
     assert out["code"] == "INTERNAL" and "COM went away" in out["message"]
+
+
+def test_typing_verification_waits_for_a_slow_app(app, run, monkeypatch):
+    """Real Notepad drew the last Arabic letters ~100 ms after SendInput returned; the
+    first read must not be taken as the answer."""
+    vp = app["liar"].GetPattern(fake_uia.PatternId.ValuePattern)
+    pending, reads = [], [0]
+
+    def slow_type(text, interval=0):
+        vp._value += text[:3]
+        pending.append(text[3:])
+
+    real = type(vp).Value
+
+    class Lagging(type(vp)):
+        @property
+        def Value(self):
+            reads[0] += 1
+            if pending and reads[0] > 3:
+                self._value += pending.pop()
+            return real.fget(self)
+
+    vp.__class__ = Lagging
+    monkeypatch.setattr(win32, "type_unicode", slow_type)
+    run("snapshot", "--window", "Notepad")
+    out = run("type", "name=Cell", "مرحبا بكم", "--keys")
+    assert out["ok"] and out["verified"] is True

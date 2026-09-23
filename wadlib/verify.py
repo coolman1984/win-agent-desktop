@@ -146,6 +146,18 @@ def after_action(args, ctrl, hwnd, before):
                                           or getattr(args, "expect_gone", None))
 
 
+def read_until(read, good, timeout=2.0):
+    """Keystrokes are queued, not delivered: the app may still be drawing the last
+    characters when we look. Poll until `good(value)` or the time is up; return the
+    last value read either way."""
+    deadline = time.time() + timeout
+    while True:
+        have = read()
+        if good(have) or time.time() >= deadline:
+            return have
+        time.sleep(0.1)
+
+
 def same_text(want, have):
     norm = lambda s: str(s or "").replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
     return norm(want) == norm(have)

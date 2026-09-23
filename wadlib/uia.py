@@ -132,14 +132,29 @@ def popup_of(hwnd):
     many dialogs are separate top-level windows, often without a title)."""
     main = auto.ControlFromHandle(hwnd)
     pid = main.ProcessId if main else None
+    same_app = []
     for w in auto.GetRootControl().GetChildren():      # z-order: topmost first
         try:
             if w.NativeWindowHandle == hwnd or w.IsOffscreen:
                 continue
-            if w.ClassName == "#32768" or (pid and w.ProcessId == pid):
+            if w.ClassName == "#32768":                  # a menu is always what is open
                 return w
+            if pid and w.ProcessId == pid:
+                same_app.append(w)
         except Exception:
             continue
+    # dialogs before tool windows and IME helpers of the same process
+    for w in same_app:
+        if w.ClassName == "#32770" or w.ControlTypeName == "WindowControl" and w.Name:
+            return w
+    if same_app:
+        return same_app[0]
+    try:                  # modern apps host dialogs inside the main window
+        for c in main.GetChildren():
+            if c.ControlTypeName == "WindowControl" and c.NativeWindowHandle:
+                return c
+    except Exception:
+        pass
     raise WadError("NO_POPUP", "no open menu or dialog of that app",
                    "open it first (right-click, a menu item), then snapshot --popup")
 

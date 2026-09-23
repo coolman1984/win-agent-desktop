@@ -461,8 +461,9 @@ def cmd_type(args):
         except Exception as e:
             notes.append(f"value pattern refused ({e.__class__.__name__}); typed instead")
         if how and not args.no_verify:
-            time.sleep(0.1)
-            if not verify.same_text(want, _read_back(ctrl)):
+            have = verify.read_until(lambda: _read_back(ctrl),
+                                     lambda v: verify.same_text(want, v), timeout=0.6)
+            if not verify.same_text(want, have):
                 notes.append("value pattern did not stick; typed instead")
                 how = None
     if how is None:
@@ -475,10 +476,13 @@ def cmd_type(args):
         inputs.press_chord([auto.Keys.VK_RETURN])
     verified = None
     if not args.no_verify:
-        have = _read_back(ctrl)
+        def landed(v):
+            return verify.same_text(want, v) or (
+                how == "keys" and str(args.text).strip() in str(v or ""))
+        have = verify.read_until(lambda: _read_back(ctrl), landed,
+                                 timeout=2.0 + len(args.text) * 0.01)
         if have is not None and not args.submit:
-            verified = verify.same_text(want, have) or (
-                how == "keys" and str(args.text).strip() in str(have))
+            verified = landed(have)
             if not verified:
                 raise WadError("VERIFY_FAILED",
                                f"after typing, {el['ref']} holds {verify._short(have)!r}, "
@@ -510,8 +514,7 @@ def cmd_clear(args):
     ctrl.SetFocus()
     inputs.press_chord([auto.Keys.VK_CONTROL, ord("A")])
     inputs.press_chord([auto.Keys.VK_DELETE])
-    time.sleep(0.1)
-    left = _read_back(ctrl)
+    left = verify.read_until(lambda: _read_back(ctrl), lambda v: v in (None, ""))
     if left not in (None, ""):
         raise WadError("VERIFY_FAILED", f"{el['ref']} still holds {verify._short(left)!r}")
     return ok(ref=el["ref"], via="keys", **where(el, hwnd)), f"cleared {el['ref']} via keys"
