@@ -37,6 +37,13 @@ N_ORDERS = 200
 u32 = ctypes.windll.user32
 k32 = ctypes.windll.kernel32
 u32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+u32.LoadKeyboardLayoutW.argtypes = [wintypes.LPCWSTR, wintypes.UINT]
+u32.LoadKeyboardLayoutW.restype = ctypes.c_void_p
+u32.GetKeyboardLayout.argtypes = [wintypes.DWORD]
+u32.GetKeyboardLayout.restype = ctypes.c_void_p
+u32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, ctypes.c_void_p]
+WM_INPUTLANGCHANGEREQUEST = 0x0050
+EN_US = 0x0409
 
 # ---------------------------------------------------------------------------
 # Console narration
@@ -119,12 +126,37 @@ class Excel:
         self.proc = subprocess.Popen([EXCEL, "/x"])
         deadline = time.time() + 90
         while time.time() < deadline:
-            for top in auto.GetRootControl().GetChildren():
-                if top.ProcessId == self.proc.pid and top.ClassName == "XLMAIN":
-                    self.w, self.hwnd = top, top.NativeWindowHandle
-                    return
+            try:
+                for top in auto.GetRootControl().GetChildren():
+                    if top.ProcessId == self.proc.pid and top.ClassName == "XLMAIN":
+                        self.w, self.hwnd = top, top.NativeWindowHandle
+                        return
+            except Exception:
+                pass
             time.sleep(0.4)
         raise RuntimeError("the new Excel window did not appear within 90s")
+
+    def input_language(self):
+        thread = u32.GetWindowThreadProcessId(self.hwnd, None)
+        return (u32.GetKeyboardLayout(thread) or 0) & 0xFFFF
+
+    def force_english_input(self):
+        """Ribbon key tips (Alt, H, O, R ...) only match English letters. With an
+        Arabic (or any non-Latin) layout active the same keys type other characters,
+        the key tips miss, and the text meant for a ribbon box lands in a cell.
+        Only the demo's own Excel window is switched; every other window keeps its
+        layout."""
+        if self.input_language() == EN_US:
+            return True
+        hkl = u32.LoadKeyboardLayoutW("00000409", 1)          # KLF_ACTIVATE
+        for _ in range(3):
+            u32.PostMessageW(self.hwnd, WM_INPUTLANGCHANGEREQUEST, 0, hkl)
+            deadline = time.time() + 2
+            while time.time() < deadline:
+                if self.input_language() == EN_US:
+                    return True
+                time.sleep(0.1)
+        return False
 
     def bring_front(self):
         h = self.hwnd
@@ -181,13 +213,16 @@ class Excel:
     def find(self, root, name, ctype=None, parent=None, depth=20, timeout=5.0):
         deadline = time.time() + timeout
         while True:
-            for c, _d in auto.WalkControl(root, maxDepth=depth):
-                try:
-                    if c.Name == name and (ctype is None or c.ControlTypeName == ctype) and (
-                            parent is None or c.GetParentControl().Name == parent):
-                        return c
-                except Exception:
-                    continue
+            try:
+                for c, _d in auto.WalkControl(root, maxDepth=depth):
+                    try:
+                        if c.Name == name and (ctype is None or c.ControlTypeName == ctype) and (
+                                parent is None or c.GetParentControl().Name == parent):
+                            return c
+                    except Exception:
+                        continue
+            except Exception:
+                pass            # the app rebuilt part of the tree mid-walk; walk again
             if time.time() > deadline:
                 raise RuntimeError(f"could not find {ctype or 'control'} {name!r}")
             time.sleep(0.3)
@@ -317,7 +352,8 @@ class Excel:
         for r in range(int(r1), int(r2) + 1):
             row = []
             for col in cols:
-                cell = grid.DataItemControl(AutomationId=f"{col}{r}", searchDepth=1)
+                # depth 2: a cell inside an Excel Table sits under the table's own element
+                cell = grid.DataItemControl(AutomationId=f"{col}{r}", searchDepth=2)
                 if not cell.Exists(5):
                     raise RuntimeError(f"cell {col}{r} is not in Excel's accessibility tree")
                 vp = cell.GetPattern(auto.PatternId.ValuePattern)
@@ -325,10 +361,34 @@ class Excel:
             rows.append(row)
         return rows
 
+    def keytips(self, seq):
+        """Alt, then one key-tip letter at a time. Sent as one burst ("{Alt}hor") Excel
+        loses letters now and then, and whatever follows is typed into a cell instead."""
+        self.wait_ready()
+        self.guard()
+        auto.PressKey(auto.Keys.VK_MENU, waitTime=0.05)
+        auto.ReleaseKey(auto.Keys.VK_MENU, waitTime=0.5)
+        STATS["keys"] += 1
+        for ch in seq:
+            self.keys(ch, wait=0.45)
+
     def rename_sheet(self, name):
-        self.keys("{Alt}hor", wait=0.4)
-        self.text(name)
-        self.keys("{Enter}", wait=0.3)
+        """Home > Format > Rename Sheet, proven by reading the tab names back.
+
+        Done from Z1000, a cell nothing uses, and Z1000 is cleared afterwards: if the
+        key tips ever miss, the name lands there instead of on real data."""
+        for attempt in range(3):
+            self.goto("Z1000")
+            self.keytips("hor")
+            self.text(name)
+            self.keys("{Enter}", wait=0.5)
+            self.wait_ready()
+            self.goto("Z1000")
+            self.keys("{Delete}", wait=0.2)
+            if name in self.sheet_tabs():
+                return
+            info(f"renaming to {name!r} did not take (tabs {self.sheet_tabs()}), retrying")
+        raise RuntimeError(f"could not rename the sheet to {name!r}")
 
     def open_menu(self, name, expect):
         """Expand a ribbon menu and PROVE it is open (its item `expect` is visible)
@@ -423,17 +483,27 @@ def main():
             if wp:
                 wp.SetWindowVisualState(auto.WindowVisualState.Maximized)
             xl.bring_front()
-            xl.w.EditControl(Name="Name Box", searchDepth=6)
-            time.sleep(1.0)
+            xl.name_box()
+            xl.wait_ready()
+            if not xl.force_english_input():
+                raise RuntimeError(f"could not switch the demo Excel window to English (US) input "
+                                   f"(it is 0x{xl.input_language():04x}) - ribbon key tips need it")
+            ok("keyboard layout of the demo Excel window set to English (US) - other windows keep theirs")
 
             # 2 -------------------------------------------------------------
             stage(2, total, f"Load {N_ORDERS} sales orders")
+            xl.rename_sheet("Orders")
             header = list(rows[0])
             tsv = "\t".join(header) + "\n" + "\n".join(
                 "\t".join(str(r[h]) for h in header) for r in rows) + "\n"
             xl.paste("A1", tsv)
-            xl.rename_sheet("Orders")
-            ok(f"{N_ORDERS} rows x {len(header)} columns pasted into A1:G{N_ORDERS + 1}; sheet renamed 'Orders'")
+            got_header = xl.read("A1:G1")[0]
+            got_last = xl.read(f"A{N_ORDERS + 1}")[0][0]
+            if got_header != header or got_last != rows[-1]["Order ID"]:
+                raise RuntimeError(f"the paste did not land as expected: header {got_header}, "
+                                   f"last order {got_last!r}")
+            ok(f"{N_ORDERS} rows x {len(header)} columns pasted and read back "
+               f"(header + last order {got_last}); sheet renamed 'Orders'")
 
             # 3 -------------------------------------------------------------
             stage(3, total, "Insert > Table - and read what the dialog proposes before accepting it")
@@ -460,7 +530,7 @@ def main():
             xl.gallery(f"H2:H{N_ORDERS + 1}", "Conditional Formatting", "d", "Data Bars", "Green Data Bar",
                        group="Gradient Fill")
             xl.goto("A:H")
-            xl.keys("{Alt}hoi", wait=0.4)
+            xl.keytips("hoi")
             last = xl.read(f"H{N_ORDERS + 1}")[0][0]
             info(f"last row H{N_ORDERS + 1} reads {last}; Python says {want['last_revenue']:,.2f}")
             if abs(num(last) - want["last_revenue"]) > 0.005:
@@ -478,7 +548,20 @@ def main():
 
             # 6 -------------------------------------------------------------
             stage(6, total, "Write the dashboard with dynamic-array formulas")
+            # Title formatting goes on while A1 is still empty: if a key tip ever
+            # misses, the font name lands in A1 and the title below overwrites it.
+            xl.style("A1", "Title")
+            xl.goto("A1")
+            xl.keytips("hff")
+            xl.text("Segoe UI Semibold")
+            xl.keys("{Enter}", wait=0.4)
+            xl.goto("A1")
+            xl.keytips("hfs")
+            xl.text("24")
+            xl.keys("{Enter}", wait=0.4)
             xl.put("A1", "SALES COMMAND CENTER")
+            if xl.read("A1")[0][0] != "SALES COMMAND CENTER":
+                raise RuntimeError("the title did not land in A1")
             xl.put("A2", '="Built hands-free by an AI agent  |  "&ROWS(Table1)&" orders  |  "&TEXT(TODAY(),"dd mmm yyyy")')
             for ref, head in zip("ABCDE", ["Region", "Revenue", "Orders", "Avg Order", "Share"]):
                 xl.put(f"{ref}4", head, interval=0.008)
@@ -508,13 +591,6 @@ def main():
 
             # 7 -------------------------------------------------------------
             stage(7, total, "Style it - cell styles, number formats, data bars, icon sets, no gridlines")
-            xl.style("A1", "Title")
-            xl.keys("{Alt}hff", wait=0.4)
-            xl.text("Segoe UI Semibold")
-            xl.keys("{Enter}", wait=0.3)
-            xl.keys("{Alt}hfs", wait=0.4)
-            xl.text("24")
-            xl.keys("{Enter}", wait=0.3)
             xl.style("A2", "Explanatory Text")
             xl.style("A4:E4", "Blue, Accent1")
             xl.style("A10:E10", "Total")
@@ -532,7 +608,7 @@ def main():
             xl.gallery("E5:E9", "Conditional Formatting", "i", "Icon Sets", "3 Arrows (Colored)")
             for block in ("A4:E10", "G4:G11"):          # not A1/A2: the title must not widen column A
                 xl.goto(block)
-                xl.keys("{Alt}hoi", wait=0.4)
+                xl.keytips("hoi")
             xl.tab("View")
             g = xl.find(xl.ribbon(), "Gridlines", ctype="CheckBoxControl")
             tp = g.GetPattern(auto.PatternId.TogglePattern)

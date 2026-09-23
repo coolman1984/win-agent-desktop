@@ -49,7 +49,14 @@ action is appended to `%LOCALAPPDATA%\win-agent-desktop\trace.jsonl`.
 - Window titles drift (Notepad renames an unsaved tab after its first line), so
   windows are tracked by handle once found.
 
+- Ribbon key tips (Alt, H, O, R) only match English letters. With an Arabic keyboard
+  layout active they miss, and the text meant for the ribbon lands in a cell. The demo
+  switches only its own Excel window to English (US) input.
+- Copying OUT of Office can come back empty to other programs on a managed PC even
+  though pasting in works. Cells are read from the grid instead: each visible cell's
+  value is its displayed text (cells inside an Excel Table sit one level deeper).
+
 ## Status
 
-The Excel demo has passed end to end (9/9 checks). The polished version with the
-docked chart and chart verification has not yet completed a clean run.
+The Excel demo passes end to end: 15/15 checks (every region, the total, three KPIs,
+five chart bars and the chart title), 0 mouse clicks, about 2.5 minutes.
