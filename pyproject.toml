@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "win-agent-desktop"
+version = "0.2.0"
+description = "Windows desktop automation for AI agents: accessibility tree, verified actions, MCP server"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["uiautomation>=2.0.29", "pywin32>=306; sys_platform == 'win32'", "Pillow>=10"]
+
+[project.optional-dependencies]
+ocr = ["winrt-runtime>=2.0", "winrt-Windows.Foundation>=2.0",
+       "winrt-Windows.Foundation.Collections>=2.0", "winrt-Windows.Globalization>=2.0",
+       "winrt-Windows.Graphics.Imaging>=2.0", "winrt-Windows.Media.Ocr>=2.0",
+       "winrt-Windows.Storage>=2.0", "winrt-Windows.Storage.Streams>=2.0"]
+
+[project.scripts]
+wad = "wadlib.cli:main"
+
+[tool.setuptools]
+packages = ["wadlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

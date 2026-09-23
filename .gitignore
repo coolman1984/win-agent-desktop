@@ -3,3 +3,6 @@ __pycache__/
 demo_output/
 *.png
 @AutomationLog.txt
+*.egg-info/
+.pytest_cache/
+build/
