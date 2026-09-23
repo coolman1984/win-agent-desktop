@@ -191,6 +191,76 @@ def close_without_saving():
     wad("wait", "--window", ctx["title"], "--gone", "--timeout", "15")
 
 
+# --- a real Windows Forms app: the controls Notepad lacks --------------------------
+APP = "wad test app"
+
+
+def forms_launch():
+    ps1 = os.path.join(ROOT, "tools", "test_app.ps1")
+    ctx["forms"] = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                                     "-STA", "-File", ps1])
+    out = wad("wait", "--window", APP, "--timeout", "40")
+    wad("snapshot", "--window", APP, "-i")
+    return out["title"]
+
+
+def forms_type():
+    out = wad("type", "aid=nameBox", "Ahmed أحمد", "--window", APP)
+    assert out["verified"] is True, out
+    return out["via"]
+
+
+def forms_check():
+    assert wad("check", "role=CheckBox name=Subscribe", "--window", APP)["state"] == "on"
+    assert wad("uncheck", "role=CheckBox name=Subscribe", "--window", APP)["state"] == "off"
+    assert wad("check", "role=CheckBox name=Subscribe", "--window", APP)["state"] == "on"
+
+
+def forms_select():
+    out = wad("select", "role=ComboBox name=Color", "blue", "--window", APP)
+    assert out["option"] == "Blue", out
+    return f"value {out['value']!r}"
+
+
+def forms_expand():
+    wad("expand", "role=ComboBox name=Color", "--window", APP)
+    got = wad("get", "role=ComboBox name=Color", "--window", APP)
+    wad("collapse", "role=ComboBox name=Color", "--window", APP)
+    assert got.get("expanded") is True, got
+    return "expanded then collapsed"
+
+
+def forms_scroll():
+    out = wad("scroll", "role=List name=Numbers", "--amount", "10", "--window", APP)
+    assert out["moved"], out
+    return f"{out.get('start')} -> {out.get('end')}"
+
+
+def forms_disabled():
+    out = wad("click", "role=Button name=Disabled", "--window", APP, ok=False)
+    assert out["code"] == "NOT_ENABLED", out
+
+
+def forms_submit():
+    out = wad("click", "role=Button name=Submit", "--window", APP,
+              "--expect", "Submitted: Ahmed أحمد / Blue / True")
+    return "; ".join(out["changes"][:2])
+
+
+def forms_hover_and_ocr_click():
+    wad("hover", "role=Button name=Submit", "--window", APP)
+    wad("type", "aid=nameBox", "Second", "--window", APP)
+    out = wad("click-text", "Submit", "--window", APP, "--expect", "Submitted: Second",
+              "--lang", "en")
+    return f"clicked at ({out['screen_x']}, {out['screen_y']})"
+
+
+def forms_close():
+    wad("close", "--window", APP)
+    wad("wait", "--window", APP, "--gone", "--timeout", "15")
+    ctx["forms"].wait(timeout=15)
+
+
 def main():
     for name, fn in [("doctor", lambda: wad("doctor", ok=False)["checks"][0]["detail"]),
                      ("launch notepad", launch), ("snapshot", snapshot),
@@ -204,9 +274,19 @@ def main():
                      ("press + clear (verified)", press_and_clear),
                      ("dialog: check/uncheck/type", dialog_controls),
                      ("find + wait --target", wait_and_find),
-                     ("close without saving", close_without_saving)]:
+                     ("close without saving", close_without_saving),
+                     ("forms: launch test app", forms_launch),
+                     ("forms: type (Unicode, verified)", forms_type),
+                     ("forms: check / uncheck", forms_check),
+                     ("forms: select in combo box", forms_select),
+                     ("forms: expand / collapse", forms_expand),
+                     ("forms: scroll a list", forms_scroll),
+                     ("forms: disabled button refused", forms_disabled),
+                     ("forms: submit --expect result", forms_submit),
+                     ("forms: hover + OCR click-text", forms_hover_and_ocr_click),
+                     ("forms: close", forms_close)]:
         check(name, fn)
-        if name == "launch notepad" and not results[-1][0]:
+        if name == "forms: launch test app" and not results[-1][0]:
             break
     failed = [n for good, n in results if not good]
     print(f"\n{len(results) - len(failed)}/{len(results)} passed")
