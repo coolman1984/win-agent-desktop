@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+demo_output/
+*.png
+@AutomationLog.txt
