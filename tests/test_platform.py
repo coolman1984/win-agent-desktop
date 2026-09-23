@@ -261,3 +261,19 @@ def test_ocr_prefers_the_whole_word():
                  {"text": "Submit", "box": [30, 240, 60, 20]}]}]
     hit, _ = vision.find_text(lines, "Submit")
     assert hit["center"] == [60, 250]
+
+
+def test_ocr_reads_an_enlarged_copy_and_maps_boxes_back(tmp_path, monkeypatch):
+    from PIL import Image
+    shot = tmp_path / "s.png"
+    Image.new("RGB", (400, 300), "white").save(shot)
+    seen = {}
+
+    async def fake_ocr(path, lang):
+        seen["size"] = Image.open(path).size
+        return [{"text": "Submit", "box": [100, 200, 80, 40],
+                 "words": [{"text": "Submit", "box": [100, 200, 80, 40]}]}]
+    monkeypatch.setattr(vision, "_ocr_file", fake_ocr)
+    lines = vision.ocr({"path": str(shot)})
+    assert seen["size"] == (800, 600)
+    assert lines[0]["box"] == [50, 100, 40, 20] and lines[0]["center"] == [70, 110]

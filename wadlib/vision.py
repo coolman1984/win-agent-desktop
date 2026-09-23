@@ -209,9 +209,28 @@ async def _ocr_file(path, lang):
     return lines
 
 
+OCR_UPSCALE = 2
+OCR_MAX_SIDE = 9000                     # Windows OCR refuses images above ~10000 px
+
+
 def ocr(shot, lang=None):
-    lines = asyncio.run(_ocr_file(shot["path"], lang))
-    for ln in lines:                    # centers, in screenshot pixels and on screen
+    """Windows OCR is tuned for documents; UI text (a 9 pt button caption) is too small
+    for it and simply disappears. Reading a 2x enlarged copy finds it; the boxes are
+    scaled back, so positions stay in screenshot pixels."""
+    path, factor = shot["path"], 1
+    pil = _pil()
+    if pil is not None:
+        img = pil[0].open(path)
+        if max(img.size) * OCR_UPSCALE <= OCR_MAX_SIDE:
+            factor = OCR_UPSCALE
+            path = os.path.splitext(shot["path"])[0] + "-ocr.png"
+            img.resize((img.width * factor, img.height * factor),
+                       pil[0].LANCZOS).save(path)
+    lines = asyncio.run(_ocr_file(path, lang))
+    for ln in lines:                    # back to screenshot pixels, plus centers
+        for w in ln["words"]:
+            w["box"] = [round(v / factor) for v in w["box"]]
+        ln["box"] = [round(v / factor) for v in ln["box"]]
         x, y, w, h = ln["box"]
         ln["center"] = [round(x + w / 2), round(y + h / 2)]
     return lines
