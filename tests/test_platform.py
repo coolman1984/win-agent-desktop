@@ -234,3 +234,20 @@ def test_command_reference_is_up_to_date():
 def test_guide_is_served(app, run):
     out = run("guide")
     assert out["ok"] and "snapshot" in out["guide"] and not out["guide"].startswith("---")
+
+
+def test_every_error_code_is_documented_for_agents():
+    import re
+    codes = set()
+    for name in os.listdir(os.path.join(ROOT, "wadlib")):
+        if name.endswith(".py"):
+            with open(os.path.join(ROOT, "wadlib", name), encoding="utf-8") as fh:
+                src = fh.read()
+            codes |= set(re.findall(r'WadError\(\s*"([A-Z_]+)"', src))
+            codes |= set(re.findall(r'\("([A-Z_]+)", "no (?:snapshot|screenshot)', src))
+            codes |= set(re.findall(r'code="([A-Z_]+)"', src))
+    with open(os.path.join(ROOT, ".claude", "skills", "wad-desktop", "references", "errors.md"),
+              encoding="utf-8") as fh:
+        doc = fh.read()
+    missing = sorted(c for c in codes if f"`{c}`" not in doc)
+    assert not missing, f"document these in references/errors.md: {missing}"

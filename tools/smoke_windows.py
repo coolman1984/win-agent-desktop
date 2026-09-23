@@ -118,6 +118,69 @@ def replay():
     return out["summary"]
 
 
+def window_ops():
+    wad("window", "maximize", "--window", ctx["title"])
+    wad("window", "restore", "--window", ctx["title"])
+    out = wad("window", "move", "--window", ctx["title"], "--x", "40", "--y", "40")
+    assert out["rect"][:2] == [40, 40], out["rect"]
+    return f"{out['rect']}"
+
+
+def headed_click():
+    out = wad("click", ctx["editor"], "--headed", "--window", ctx["title"], "--no-verify")
+    assert out["via"].startswith("mouse:"), out
+    return out["via"]
+
+
+def context_menu():
+    wad("right-click", ctx["editor"], "--window", ctx["title"], "--no-verify")
+    time.sleep(0.8)
+    pop = wad("snapshot", "--window", ctx["title"], "--popup")
+    names = {e["name"] for e in pop["elements"]}
+    wad("press", "esc", "--window", ctx["title"])
+    assert any("select all" in n.lower() or "undo" in n.lower() for n in names), sorted(names)
+    return f"{len(names)} names in the menu"
+
+
+def press_and_clear():
+    wad("press", "ctrl+end", "--window", ctx["title"])
+    out = wad("clear", ctx["editor"], "--window", ctx["title"])
+    got = wad("get", ctx["editor"], "--window", ctx["title"])
+    assert not (got.get("value") or got.get("text") or "").strip(), got
+    wad("type", ctx["editor"], "line one\nline two\nline three", "--window", ctx["title"])
+    return out["via"]
+
+
+def dialog_controls():
+    """The Replace dialog (classic Notepad): typing into a dialog, a checkbox, closing."""
+    wad("press", "ctrl+h", "--window", ctx["title"])
+    time.sleep(1.0)
+    pop = wad("snapshot", "--window", ctx["title"], "--popup", ok=False)
+    if not pop.get("ok") or not any(e["role"] == "CheckBox" for e in pop["elements"]):
+        wad("press", "esc", "--window", ctx["title"])
+        return "no Replace dialog in this Notepad (skipped)"
+    box = next(e["name"] for e in pop["elements"] if e["role"] == "CheckBox")
+    sel = f'role=CheckBox name="{box}"'
+    assert wad("check", sel)["state"] == "on"
+    assert wad("check", sel)["state"] == "on"
+    assert wad("uncheck", sel)["state"] == "off"
+    edit = next(e for e in pop["elements"] if e["role"] == "Edit")
+    wad("type", edit["ref"], "two")
+    got = wad("get", edit["ref"])
+    assert got.get("value") == "two", got
+    wad("click", "role=Button name=Cancel", "--expect-gone", "Match case", "--timeout", "5",
+        ok=False)
+    wad("snapshot", "--window", ctx["title"])
+    return f"checkbox {box!r} + edit ok"
+
+
+def wait_and_find():
+    wad("snapshot", "--window", ctx["title"], "-i")
+    out = wad("find", "--role", "MenuItem")
+    wad("wait", "--window", ctx["title"], "--target", ctx["editor"], "--timeout", "5")
+    return f"{len(out['matches'])} menu items"
+
+
 def close_without_saving():
     wad("close", "--window", ctx["title"])
     time.sleep(1.5)
@@ -135,6 +198,12 @@ def main():
                      ("type via value (verified)", type_value),
                      ("screenshot --marks", screenshot), ("ocr finds text", ocr),
                      ("mcp server over stdio", mcp), ("trace export + batch replay", replay),
+                     ("window maximize/restore/move", window_ops),
+                     ("headed click lands on target", headed_click),
+                     ("right-click + popup snapshot", context_menu),
+                     ("press + clear (verified)", press_and_clear),
+                     ("dialog: check/uncheck/type", dialog_controls),
+                     ("find + wait --target", wait_and_find),
                      ("close without saving", close_without_saving)]:
         check(name, fn)
         if name == "launch notepad" and not results[-1][0]:
