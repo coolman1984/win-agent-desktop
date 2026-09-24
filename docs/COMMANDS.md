@@ -15,7 +15,7 @@ ones that build the command line and the MCP tools. Every command also takes
 | vision | [`screenshot`](#screenshot), [`click-xy`](#click-xy), [`ocr`](#ocr), [`click-text`](#click-text) |
 | office | [`excel-info`](#excel-info), [`excel-read`](#excel-read), [`excel-write`](#excel-write), [`excel-run`](#excel-run), [`word-read`](#word-read), [`word-write`](#word-write) |
 | system | [`shell`](#shell), [`file-read`](#file-read), [`file-write`](#file-write), [`file-list`](#file-list), [`process-list`](#process-list), [`process-kill`](#process-kill) |
-| workflow | [`report`](#report), [`batch`](#batch), [`trace`](#trace), [`doctor`](#doctor), [`guide`](#guide), [`mcp`](#mcp) |
+| workflow | [`record`](#record), [`record-stop`](#record-stop), [`report`](#report), [`batch`](#batch), [`trace`](#trace), [`doctor`](#doctor), [`guide`](#guide), [`mcp`](#mcp) |
 
 ## Observe - see what is on screen
 
@@ -700,6 +700,31 @@ wad process-kill WHICH
 | WHICH | text |  | pid or exe name |
 
 ## Workflow - batch, replay, setup
+
+### record
+
+Watch a PERSON do a task and save it as a replayable batch file (stop with Ctrl+Shift+F12, `record-stop`, or --seconds).
+
+```
+wad record [OUT] [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| OUT | text |  | the batch file to write |
+| `--window` `-w` | text |  | only record in windows whose title contains this |
+| `--seconds` | number |  | stop by itself after this long |
+| `--ignore-injected` | flag |  | skip synthetic input (other tools, remote control) - only real hands |
+
+_command line only_
+
+### record-stop
+
+Stop a running `record` (from another terminal or agent).
+
+```
+wad record-stop
+```
 
 ### report
 

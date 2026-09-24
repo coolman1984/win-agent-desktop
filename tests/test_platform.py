@@ -331,3 +331,64 @@ def test_step_report_is_off_by_default_and_records_when_on(app, run, tmp_path, m
     assert page.count("data:image/jpeg;base64,") == 3 and "NOT_ENABLED" in page
     assert "hunter2" not in page and 'class="step bad"' in page
     assert os.path.isdir(report.report_dir())
+
+
+# --- recorder --------------------------------------------------------------------
+def test_recorder_turns_a_persons_actions_into_replayable_steps(app, run, monkeypatch, tmp_path):
+    from wadlib import record
+    V = fake_uia.PatternId.ValuePattern
+    under = {}
+    monkeypatch.setattr(fake_uia, "ControlFromPoint", lambda x, y: under["ctrl"])
+    rec = record.Recorder()
+
+    under["ctrl"] = app["doc"]                    # click into the editor and type
+    rec.on_click(10, 60, "left", when=1.0)
+    fake_uia.FOCUS[0] = app["doc"]
+    rec.poll_focus()
+    app["doc"].GetPattern(V)._value = "hello مرحبا"
+    rec.on_key(0x48)                              # plain letters: nothing on their own
+    fake_uia.FOCUS[0] = app["pw"]                 # tab to the password box
+    rec.on_key(0x09)
+    rec.poll_focus()
+    app["pw"].GetPattern(V)._value = "hunter2"
+    under["ctrl"] = app["save"]                   # click Save (flushes the password)
+    rec.on_click(5, 5, "left", when=5.0)
+    rec.on_key(0x53, {"ctrl"})                    # ctrl+s
+    under["ctrl"] = app["wrap"]
+    rec.on_click(5, 5, "left", when=9.0)
+    rec.on_click(5, 5, "left", when=9.2)          # a double click
+    steps = rec.finish()
+
+    assert steps == [
+        {"cmd": "type", "target": "role=Document aid=RichEditD2DPT",
+         "window": "Untitled - Notepad", "text": "hello مرحبا"},
+        {"cmd": "press", "combo": "tab", "window": "Untitled - Notepad"},
+        {"cmd": "type", "target": "role=Edit name=Password", "window": "Untitled - Notepad",
+         "text": "${ENV:WAD_SECRET}"},
+        {"cmd": "click", "target": "role=Button aid=SaveButton", "window": "Untitled - Notepad"},
+        {"cmd": "press", "combo": "ctrl+s", "window": "Untitled - Notepad"},
+        {"cmd": "double-click", "target": "role=CheckBox name='Word wrap'",
+         "window": "Untitled - Notepad"}]
+    assert "hunter2" not in json.dumps(steps)
+
+    fake_uia.build()                              # replays on a fresh app
+    flow = tmp_path / "rec.json"
+    flow.write_text(json.dumps(steps[:1] + steps[3:4]), encoding="utf-8")
+    assert run("batch", str(flow))["ok"]
+
+
+def test_recorder_makes_ambiguous_selectors_unique(app, monkeypatch):
+    from wadlib import record
+    monkeypatch.setattr(fake_uia, "ControlFromPoint", lambda x, y: app["ok2"])
+    rec = record.Recorder()
+    rec.on_click(1, 1)
+    assert rec.finish()[0]["target"] == "role=Button name=OK nth=2"
+
+
+def test_recorder_ignores_other_windows_when_filtered(app, monkeypatch):
+    from wadlib import record
+    other_btn = app["other"].add(fake_uia.Control("Button", "Elsewhere"))
+    monkeypatch.setattr(fake_uia, "ControlFromPoint", lambda x, y: other_btn)
+    rec = record.Recorder(window="notepad")
+    rec.on_click(1, 1)
+    assert rec.finish() == []
