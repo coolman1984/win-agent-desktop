@@ -288,7 +288,7 @@ def forms_record():
     assert "steps" in out, out
     steps = out["steps"]
     typed = [st for st in steps if st["cmd"] == "type" and st.get("text") == "Recorded"]
-    clicked = [st for st in steps if st["cmd"] == "click" and "Submit" in st["target"]]
+    clicked = [st for st in steps if st["cmd"] == "click" and "submit" in st["target"].lower()]
     assert typed and clicked, steps
     wad("type", "aid=nameBox", "something else", "--window", APP)
     replay = wad("batch", flow)

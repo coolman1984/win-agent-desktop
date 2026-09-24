@@ -137,6 +137,9 @@ class Recorder:
             return                                        # typing: the field value tells
         if not chord and name in ("up", "down") and self.field and self.field[3] == "ComboBox":
             return                                        # walking a drop-down: select tells
+        if (chord == ["ctrl"] and name in ("a", "c", "v", "x", "z", "y") and self.field
+                and self.field[3] in EDITABLE):
+            return                                        # editing inside a field: its value tells
         self.flush_field()
         title = self._front_title()
         if not self._wanted(title):

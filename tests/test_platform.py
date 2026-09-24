@@ -347,6 +347,7 @@ def test_recorder_turns_a_persons_actions_into_replayable_steps(app, run, monkey
     rec.poll_focus()
     app["doc"].GetPattern(V)._value = "hello مرحبا"
     rec.on_key(0x48)                              # plain letters: nothing on their own
+    rec.on_key(0x41, {"ctrl"})                    # ctrl+a inside the field: nothing either
     fake_uia.FOCUS[0] = app["pw"]                 # tab to the password box
     rec.on_key(0x09)
     rec.poll_focus()
