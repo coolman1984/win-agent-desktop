@@ -15,7 +15,11 @@ wadlib/
   vision.py             screenshots, marks, coordinate mapping, Windows OCR
   office.py             Excel and Word through COM
   system.py             policy-gated shell / files / processes
-  workflow.py           batch, replay records, trace, doctor, guide
+  workflow.py           batch (with self-healing), replay records, trace, doctor, guide
+  browser.py            Edge / Chrome through the DevTools protocol (CDP)
+  events.py             UIA event watcher (MTA thread, own IUIAutomation), polling fallback
+  record.py             learning from a person: low-level hooks -> worker -> steps
+  report.py             the opt-in visual step report
 tests/                  pytest against tests/fake_uia.py (runs on any OS)
 tools/gen_docs.py       docs/COMMANDS.md from the registry (a test keeps it fresh)
 tools/smoke_windows.py  end-to-end on a real Windows desktop (CI: windows-latest)
@@ -105,3 +109,44 @@ fixture swaps the raw Win32 input for recorders. `tools/smoke_windows.py` then d
 real Notepad on a real Windows desktop in CI: launch, snapshot, Unicode typing, value
 typing, screenshot with marks, OCR, the MCP server, replay, window operations, a headed
 click, a context menu, a dialog's checkbox and edit, and closing without saving.
+
+## Hung apps
+
+`cli.execute_guarded` runs each command on a worker thread with a deadline (`WAD_WATCHDOG`
++ the command's own `--timeout`); commands declared `long` (batch, record, mcp) run as
+long as asked, and batch guards each step instead. Windows flagged by `IsHungAppWindow`
+are refused before any call. The CLI exits hard after a hang (the stuck thread would also
+block COM teardown); the MCP server answers `APP_HUNG` and keeps serving.
+
+## Self-healing
+
+`uia.resolve_target(..., heal=True)` (batch only): when a selector finds nothing, first the
+app's other top-level windows are searched (menus, dialogs), then `heal_selector` scores
+every element of the same role by AutomationId equality or name similarity, and accepts
+the best only if it is at least 0.72 and 0.08 ahead of the next. The step result says what
+it healed to; `--save-healed` writes it back.
+
+## Recording
+
+`record.py` installs WH_MOUSE_LL and WH_KEYBOARD_LL hooks whose callbacks only queue raw
+events (Windows drops hooks that answer slowly). A worker thread turns them into steps:
+a click becomes `click`/`right-click`/`double-click` (or `focus` for text fields) on a
+selector made unique with `nth=`; focus changes flush the previous field's final value as
+`type` (or `select` for combo boxes); chords and navigation keys become `press`.
+
+## Events
+
+`events.Watcher` creates its own IUIAutomation on a multithreaded-COM thread (interface
+pointers must not cross apartments) and registers comtypes handlers for window/menu
+opened/closed and focus changes with a cache request for name, pid and handle; handlers
+only enqueue. If registration fails it polls top-level windows and focus every 150 ms and
+reports the same events. `wait_for(cond)` re-checks a condition on every event.
+
+## Browser
+
+`browser.py` starts the browser detached, with `--user-data-dir` under the state folder and
+`--remote-debugging-address=127.0.0.1`, and talks CDP over websocket-client (origin header
+suppressed, proxies bypassed). Finding an element is one `Runtime.evaluate` of a helper that
+resolves `b12` / `text=` / CSS, refuses ambiguity, marks the element and returns its center;
+clicks are `Input.dispatchMouseEvent` there, typing is `Input.insertText` after focus and
+select-all, and both are read back.

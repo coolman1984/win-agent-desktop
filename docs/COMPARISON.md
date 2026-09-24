@@ -48,14 +48,24 @@ them.
    a person opts in, with write roots and never-allowed commands.
 6. **Tested on a real desktop in CI.** Every push drives real Notepad on Windows.
 
+## Closed since the first comparison
+
+- **Vision model** for tree-less apps: `detect` / `click-mark` through an OmniParser server.
+- **Browser DOM mode**: `browser-*` through the DevTools protocol.
+- **Recording a human** (Terminator's idea): `record` with low-level hooks, final field
+  values instead of keystrokes.
+- **Events** (UFO/agent-desktop use them): `watch`, event-driven `wait` / `launch`.
+- **Outlook and PowerPoint** through COM, with sending gated by policy.
+- Also beyond the others: self-healing replay that refuses to guess, a watchdog for hung
+  apps, and an opt-in visual step report.
+
 ## Known gaps (honest list)
 
-- No vision model for tree-less apps beyond OCR: the calling model looks at screenshots
-  itself (Windows-MCP's approach). An OmniParser-style detector could be added to
-  `vision.py`.
-- No browser DOM mode: web content is driven through Chromium's accessibility tree, which
-  works but is large; a CDP bridge (agent-desktop, Windows-MCP's `use_dom`) would be
-  faster for heavy web work.
-- No event-based recording of a *human's* actions (Terminator records OS events); wad
-  records the agent's actions.
-- Excel/Word only on the COM side; Outlook and PowerPoint are driven through their UI.
+- The vision model is not bundled: someone has to run the OmniParser server (it wants a
+  GPU). Without it, OCR and the calling model's own eyes remain.
+- `browser-*` drives wad's own browser profile; a person's already-open browser is only
+  reachable through the accessibility tree.
+- Excel, Word, Outlook and PowerPoint COM paths are tested against stand-ins, not real
+  Office, because CI runners have no Office.
+- The recorder records the windows a person uses; it does not record drag-and-drop or
+  mouse-wheel scrolling yet.
