@@ -69,7 +69,7 @@ class Watcher:
         import comtypes.client
         comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
         try:
-            core = auto._AutomationClient.instance().UIAutomationCore
+            core = comtypes.client.GetModule("UIAutomationCore.dll")
             iuia = comtypes.client.CreateObject(core.CUIAutomation, interface=core.IUIAutomation)
             cache = iuia.CreateCacheRequest()
             for prop in (NAME_PROP, PID_PROP, HWND_PROP):
