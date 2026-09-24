@@ -54,8 +54,12 @@ def preflight(ctrl, el):
 
 
 def target(args, timeout=0.0):
-    return uia.resolve_target(args.target, getattr(args, "window", None),
-                              getattr(args, "hwnd", None), timeout)
+    ctrl, el, how, hwnd = uia.resolve_target(args.target, getattr(args, "window", None),
+                                             getattr(args, "hwnd", None), timeout,
+                                             heal=getattr(args, "_heal", False))
+    if how.startswith("healed"):
+        args._healed = {"old": args.target, "new": el["ref"], "how": how}
+    return ctrl, el, how, hwnd
 
 
 # ---------------------------------------------------------------------------

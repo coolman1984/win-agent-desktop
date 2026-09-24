@@ -713,6 +713,8 @@ wad batch FILE [options]
 |---|---|---|---|
 | FILE | text |  | JSON: [{"cmd": "click", "target": "role=Button name=OK"}, {"sleep": 0.5}, ...] |
 | `--keep-going` | flag |  | continue after a failed step |
+| `--no-heal` | flag |  | fail on a changed element instead of healing the step |
+| `--save-healed` | flag |  | write healed selectors back into the batch file |
 
 ### trace
 

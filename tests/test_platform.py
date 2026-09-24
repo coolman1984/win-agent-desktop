@@ -277,3 +277,30 @@ def test_ocr_reads_an_enlarged_copy_and_maps_boxes_back(tmp_path, monkeypatch):
     lines = vision.ocr({"path": str(shot)})
     assert seen["size"] == (800, 600)
     assert lines[0]["box"] == [50, 100, 40, 20] and lines[0]["center"] == [70, 110]
+
+
+def test_batch_heals_a_renamed_button_and_can_save_it(app, run, tmp_path):
+    flow = tmp_path / "f.json"
+    flow.write_text(json.dumps({"steps": [
+        {"cmd": "click", "target": "role=Button name='Save now'", "window": "Notepad"}]}))
+    out = run("batch", str(flow), "--save-healed")
+    assert out["ok"] and out["healed"] == 1
+    assert out["results"][0]["healed"]["new"] == "role=Button aid=SaveButton"
+    saved = json.loads(flow.read_text(encoding="utf-8"))["steps"][0]
+    assert saved["target"] == "role=Button aid=SaveButton"
+
+
+def test_healing_refuses_to_guess_between_close_candidates(app, run, tmp_path):
+    flow = tmp_path / "f.json"
+    flow.write_text(json.dumps([{"cmd": "click", "target": "role=Button name=OKAY",
+                                 "window": "Notepad"}]))
+    out = run("batch", str(flow))
+    assert out["ok"] is False and "no single close match" in out["results"][0]["text"]
+    assert run("batch", str(flow), "--no-heal")["results"][0]["code"] == "ELEMENT_NOT_FOUND"
+
+
+def test_selector_also_searches_the_apps_popups(app, run):
+    run("snapshot", "--window", "Notepad")
+    run("click", "name=Save")
+    out = run("click", "role=Button name=Cancel", "--window", "Untitled - Notepad")
+    assert out["ok"]

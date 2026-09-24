@@ -42,10 +42,23 @@ def load_steps(path):
     return steps
 
 
+def _save_steps(path, steps):
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    if isinstance(data, dict):
+        data["steps"] = steps
+    else:
+        data = steps
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+
+
 @command("batch", "run a JSON list of steps in one go (a recorded or hand-written workflow)",
          Arg("file", positional=True, help='JSON: [{"cmd": "click", "target": "role=Button '
              'name=OK"}, {"sleep": 0.5}, ...]'),
          Arg("keep-going", bool, help="continue after a failed step"),
+         Arg("no-heal", bool, help="fail on a changed element instead of healing the step"),
+         Arg("save-healed", bool, help="write healed selectors back into the batch file"),
          group="workflow", long=True)
 def cmd_batch(args):
     from .cli import execute_guarded as execute
@@ -63,22 +76,35 @@ def cmd_batch(args):
         tries = 1 + int(step.get("retry", 0))
         for attempt in range(tries):
             ns = COMMANDS[name].namespace(values)
+            ns._heal = not args.no_heal
             payload, text = execute(name, ns)
             if payload.get("ok", True) or attempt == tries - 1:
                 break
             time.sleep(0.8)
         good = payload.get("ok", True)
+        healed = getattr(ns, "_healed", None) if good else None
+        if healed:
+            text += f"\n  healed: {healed['old']!r} -> {healed['new']!r} {healed['how']}"
+            if "${ENV:" not in json.dumps(step):
+                step["target"] = healed["new"]
         results.append({"step": i, "cmd": name, "ok": good, "text": text,
+                        **({"healed": healed} if healed else {}),
                         **({} if good else {"code": payload.get("code")})})
         if not good and not step.get("optional"):
             failed += 1
             if not args.keep_going:
                 break
+    n_healed = sum(1 for r in results if r.get("healed"))
+    if n_healed and args.save_healed:
+        _save_steps(args.file, steps)
     lines = [f"{'ok ' if r['ok'] else 'ERR'} {r['step']:>3} {r['cmd']:<12} "
              + (r["text"].splitlines() or [""])[0] for r in results]
     done = sum(r["ok"] for r in results)
     summary = f"{done}/{len(results)} steps ok" + (f", {failed} failed" if failed else "")
-    payload = {"ok": failed == 0, "results": results, "summary": summary}
+    if n_healed:
+        summary += f", {n_healed} healed" + (" (saved to the file)" if args.save_healed else
+                                             " (--save-healed to keep them)")
+    payload = {"ok": failed == 0, "results": results, "summary": summary, "healed": n_healed}
     if failed:
         payload.update(code="BATCH_FAILED", message=summary,
                        hint="snapshot the app at the failing step; fix that step's selector")
