@@ -12,7 +12,7 @@ ones that build the command line and the MCP tools. Every command also takes
 | mouse | [`right-click`](#right-click), [`double-click`](#double-click), [`hover`](#hover), [`drag`](#drag), [`scroll`](#scroll), [`scroll-to`](#scroll-to) |
 | keyboard | [`press`](#press), [`input-lang`](#input-lang), [`clipboard`](#clipboard) |
 | windows | [`launch`](#launch), [`focus`](#focus), [`window`](#window), [`close`](#close) |
-| vision | [`screenshot`](#screenshot), [`click-xy`](#click-xy), [`ocr`](#ocr), [`click-text`](#click-text) |
+| vision | [`screenshot`](#screenshot), [`click-xy`](#click-xy), [`ocr`](#ocr), [`click-text`](#click-text), [`detect`](#detect), [`click-mark`](#click-mark) |
 | browser | [`browser-launch`](#browser-launch), [`browser-tabs`](#browser-tabs), [`browser-open`](#browser-open), [`browser-snapshot`](#browser-snapshot), [`browser-click`](#browser-click), [`browser-type`](#browser-type), [`browser-text`](#browser-text), [`browser-wait`](#browser-wait), [`browser-eval`](#browser-eval), [`browser-screenshot`](#browser-screenshot), [`browser-close`](#browser-close) |
 | office | [`excel-info`](#excel-info), [`excel-read`](#excel-read), [`excel-write`](#excel-write), [`excel-run`](#excel-run), [`word-read`](#word-read), [`word-write`](#word-write), [`outlook-list`](#outlook-list), [`outlook-read`](#outlook-read), [`outlook-draft`](#outlook-draft), [`outlook-send`](#outlook-send), [`ppt-read`](#ppt-read), [`ppt-add-slide`](#ppt-add-slide), [`ppt-replace`](#ppt-replace), [`ppt-save`](#ppt-save) |
 | system | [`shell`](#shell), [`file-read`](#file-read), [`file-write`](#file-write), [`file-list`](#file-list), [`process-list`](#process-list), [`process-kill`](#process-kill) |
@@ -529,6 +529,42 @@ wad click-text TEXT [options]
 | `--button` | left \| right | `left` |  |
 | `--double` | flag |  |  |
 | `--lang` | text |  | OCR language tag |
+| `--expect` | text |  | fail unless this text appears afterwards |
+| `--timeout` | number | `5.0` |  |
+
+### detect
+
+Find buttons, icons and text in the PIXELS with a vision model (OmniParser server) - for apps with no accessibility tree; refs v1.. work with click-mark.
+
+```
+wad detect [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--window` `-w` | text |  | window title (exact, else a unique substring) |
+| `--hwnd` | integer |  | window handle (from `windows`) |
+| `--screen` | flag |  |  |
+| `--region` | text |  | X,Y,WIDTH,HEIGHT in the window |
+| `--interactive` `-i` | flag |  | only elements the model thinks are clickable |
+| `--url` | text |  | OmniParser server (default WAD_OMNIPARSER_URL or 127.0.0.1:8000) |
+| `--marks` | flag |  | also save a picture with the v-refs drawn on it |
+
+_read-only, MCP result includes the image_
+
+### click-mark
+
+Real mouse click on an element found by `detect` (v12), guarded.
+
+```
+wad click-mark REF [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| REF | text |  | v-ref from the last detect |
+| `--button` | left \| right | `left` |  |
+| `--double` | flag |  |  |
 | `--expect` | text |  | fail unless this text appears afterwards |
 | `--timeout` | number | `5.0` |  |
 

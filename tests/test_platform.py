@@ -475,3 +475,57 @@ def test_powerpoint_read_add_replace_save(app, run, office_fakes):
     assert rep["replaced"] == 1 and run("ppt-read", "--slide", "1")["slides"][0]["title"] == "Q4 results"
     assert run("ppt-save", "--to", "C:/out/deck.pdf")["path"].endswith("deck.pdf")
     assert run("ppt-read", "--slide", "9")["code"] == "NOT_FOUND"
+
+
+# --- smart eye (OmniParser) ----------------------------------------------------------
+def test_detect_maps_model_boxes_and_click_mark_clicks_there(app, run, monkeypatch):
+    import http.server
+    import threading
+    from PIL import Image
+
+    class Parser(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            assert body["base64_image"]
+            answer = {"parsed_content_list": [
+                {"type": "icon", "bbox": [0.5, 0.5, 0.6, 0.6], "interactivity": True,
+                 "content": "Play button"},
+                {"type": "text", "bbox": [0.0, 0.0, 0.25, 0.1], "interactivity": False,
+                 "content": "Score 120"}], "latency": 0.1}
+            data = json.dumps(answer).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *a):
+            pass
+    server = http.server.HTTPServer(("127.0.0.1", 0), Parser)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    class Grab:
+        @staticmethod
+        def grab(bbox=None, all_screens=False):
+            return Image.new("RGB", (bbox[2] - bbox[0], bbox[3] - bbox[1]), "black")
+    monkeypatch.setattr(vision, "_pil", lambda: (Image, __import__("PIL.ImageDraw").ImageDraw, Grab))
+    monkeypatch.setattr(fake_uia, "ControlFromPoint", lambda x, y: app["main"])
+    url = f"http://127.0.0.1:{server.server_port}"
+    out = run("detect", "--window", "Notepad", "--url", url, "--marks")
+    server.shutdown()
+    assert [e["content"] for e in out["elements"]] == ["Play button", "Score 120"]
+    assert out["elements"][0]["center"] == [440, 330] and out["path"].endswith("-marks.png")
+    assert run("click-mark", "v1")["screen_x"] == 440
+    assert ("click", (440, 330)) in [(e[0], e[1][:2]) for e in fake_uia.LOG]
+
+
+def test_detect_without_a_server_says_what_to_do(app, run, monkeypatch):
+    from PIL import Image
+
+    class Grab:
+        @staticmethod
+        def grab(bbox=None, all_screens=False):
+            return Image.new("RGB", (40, 30), "black")
+    monkeypatch.setattr(vision, "_pil", lambda: (Image, None, Grab))
+    out = run("detect", "--window", "Notepad", "--url", "http://127.0.0.1:9")
+    assert out["code"] == "DETECTOR_UNAVAILABLE" and "docs/VISION.md" in out["hint"]

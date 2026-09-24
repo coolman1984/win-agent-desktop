@@ -66,6 +66,7 @@ Nothing half-happens silently: when an input guard refuses, nothing was sent.
 | Code | Meaning | Do this |
 |---|---|---|
 | `NO_SCREENSHOT` | `click-xy` without a screenshot to map from | `screenshot` first, or `--screen` for absolute pixels |
+| `DETECTOR_UNAVAILABLE` | `detect` found no OmniParser server | Ask the person to start one (docs/VISION.md), or use `ocr` / `click-text` / the screenshot |
 | `OCR_LANGUAGE` | No OCR engine for that language | Install the language's OCR pack, or omit `--lang` |
 | `MISSING_DEPENDENCY` | An optional package is missing (the hint names it) | `pip install ...` as the hint says |
 | `POLICY_DENIED` | A system command is off, outside the allowed folders, or never allowed | Ask the person; never try to work around it |
