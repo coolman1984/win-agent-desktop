@@ -529,3 +529,21 @@ def test_detect_without_a_server_says_what_to_do(app, run, monkeypatch):
     monkeypatch.setattr(vision, "_pil", lambda: (Image, None, Grab))
     out = run("detect", "--window", "Notepad", "--url", "http://127.0.0.1:9")
     assert out["code"] == "DETECTOR_UNAVAILABLE" and "docs/VISION.md" in out["hint"]
+
+
+def test_detect_falls_back_to_ocr_words_without_a_server(app, run, monkeypatch):
+    from PIL import Image
+
+    class Grab:
+        @staticmethod
+        def grab(bbox=None, all_screens=False):
+            return Image.new("RGB", (400, 300), "black")
+    monkeypatch.setattr(vision, "_pil", lambda: (Image, None, Grab))
+    monkeypatch.setattr(vision, "DETECT_URL", "http://127.0.0.1:9")
+    monkeypatch.setattr(vision, "ocr", lambda shot, lang=None: [
+        {"text": "New Game", "words": [{"text": "New", "box": [10, 10, 30, 12]},
+                                       {"text": "Game", "box": [44, 10, 40, 12]}]}])
+    monkeypatch.setattr(fake_uia, "ControlFromPoint", lambda x, y: app["main"])
+    out = run("detect", "--window", "Notepad")
+    assert out["mode"] == "ocr" and [e["content"] for e in out["elements"]] == ["New", "Game"]
+    assert run("click-mark", "v2")["screen_x"] == 64

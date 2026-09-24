@@ -54,6 +54,10 @@ python wad.py detect --window "Game" -i --marks       # v1, v2 ... with centers
 python wad.py click-mark v7 --expect "Paused"
 ```
 
+Without a server, `detect` still works in a quick mode: every word Windows' OCR reads
+becomes a `v` ref you can `click-mark` (the result says `mode: ocr`). Only icons without
+any words need the model.
+
 `detect` returns each element's ref (`v1`...), kind (icon / text), whether the model
 thinks it is clickable, its box and center; `--marks` saves a copy of the picture with
 the refs drawn on it. `click-mark` clicks the center of a ref from the last `detect`.

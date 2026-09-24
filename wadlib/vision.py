@@ -360,6 +360,19 @@ def detect(shot, url=DETECT_URL, timeout=120):
     return out
 
 
+def ocr_elements(shot):
+    """detect's fallback: each OCR word as an element, in the same shape as the model's."""
+    shot = dict(shot, size=shot["size"])
+    out = []
+    for ln in ocr(shot):
+        for w in ln["words"]:
+            x, y, bw, bh = w["box"]
+            out.append({"ref": f"v{len(out) + 1}", "type": "text", "content": w["text"],
+                        "interactive": True, "box": [x, y, bw, bh],
+                        "center": [x + bw // 2, y + bh // 2]})
+    return out
+
+
 @command("detect", "find buttons, icons and text in the PIXELS with a vision model (OmniParser "
          "server) - for apps with no accessibility tree; refs v1.. work with click-mark",
          *window_args(), Arg("screen", bool), Arg("region", help="X,Y,WIDTH,HEIGHT in the window"),
@@ -369,7 +382,19 @@ def detect(shot, url=DETECT_URL, timeout=120):
          group="vision", readonly=True, image=True)
 def cmd_detect(args):
     shot = capture(args.window, args.hwnd, args.screen, args.region)
-    found = detect(shot, args.url or DETECT_URL)
+    mode = "model"
+    try:
+        found = detect(shot, args.url or DETECT_URL)
+    except WadError as e:
+        if e.code != "DETECTOR_UNAVAILABLE" or args.url:
+            raise
+        # No vision server: still give every piece of text on screen a v-ref, from
+        # Windows' own OCR - words are most of what gets clicked. Icons need the model.
+        try:
+            found = ocr_elements(shot)
+        except WadError:
+            raise e from None
+        mode = "ocr"
     if args.interactive:
         found = [e for e in found if e["interactive"]]
     state.write_json(DETECT_FILE, {"shot": shot, "elements": found})
@@ -387,8 +412,11 @@ def cmd_detect(args):
         img.save(path)
     lines = [f"{e['ref']:<5} {e['type']:<5} {'*' if e['interactive'] else ' '} "
              f"{e['center'][0]:>5},{e['center'][1]:<5} {e['content'][:60]!r}" for e in found]
-    return ({"ok": True, "elements": found, "path": path},
-            "\n".join([f"{len(found)} elements (* = clickable)"] + lines))
+    head = f"{len(found)} elements (* = clickable)"
+    if mode == "ocr":
+        head += " - text only (no vision server; icons without words need one, docs/VISION.md)"
+    return ({"ok": True, "elements": found, "path": path, "mode": mode},
+            "\n".join([head] + lines))
 
 
 @command("click-mark", "real mouse click on an element found by `detect` (v12), guarded",

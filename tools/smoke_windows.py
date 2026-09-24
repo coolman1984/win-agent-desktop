@@ -308,6 +308,16 @@ def forms_report():
     return f"{out['steps']} steps, {size // 1024} KB"
 
 
+def forms_detect_quick():
+    """No vision server on the runner: detect must fall back to OCR words, clickable."""
+    out = wad("detect", "--window", APP, "--marks")
+    assert out["mode"] == "ocr", out
+    ref = next(e["ref"] for e in out["elements"] if e["content"] == "Submit")
+    wad("type", "aid=nameBox", "Eye", "--window", APP)
+    wad("click-mark", ref, "--expect", "Submitted: Eye")
+    return f"{len(out['elements'])} words, clicked {ref}"
+
+
 def forms_close():
     wad("close", "--window", APP)
     wad("wait", "--window", APP, "--gone", "--timeout", "15")
@@ -360,6 +370,7 @@ def main():
                      ("forms: hover + OCR click-text", forms_hover_and_ocr_click),
                      ("record a person, replay it", forms_record),
                      ("visual step report (on, build, off)", forms_report),
+                     ("smart eye quick mode (OCR) + click-mark", forms_detect_quick),
                      ("forms: close", forms_close),
                      ("browser: Edge via DevTools", browser("edge")),
                      ("browser: Chrome via DevTools", browser("chrome"))]:
