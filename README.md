@@ -114,6 +114,9 @@ All commands: [docs/COMMANDS.md](docs/COMMANDS.md). In PowerShell write refs wit
   proxy and hangs. Local DevTools traffic always bypasses proxies.
 - Windows silently removes a low-level input hook that answers too slowly, so the recorder
   only queues raw events in the hook and does the accessibility lookups on another thread.
+- ctypes assumes every Windows function returns a 32-bit int. A module handle on 64-bit
+  Windows does not fit, and SetWindowsHookEx quietly refused the cut-down value. Every
+  handle-returning call needs its types declared.
 - A recorded "type" is the field's final value, read from the field - reconstructing text
   from keystrokes gets paste, autocomplete, dead keys and backspace wrong.
 - An app running as administrator is invisible to a non-elevated automation process
