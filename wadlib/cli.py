@@ -8,7 +8,7 @@ import time
 import uiautomation as auto
 
 from . import __version__, state, win32
-from . import commands, office, system, vision, workflow  # noqa: F401  (register commands)
+from . import commands, office, report, system, vision, workflow  # noqa: F401  (register)
 from .registry import COMMANDS, WadError, build_parser
 
 DESCRIPTION = f"""wad {__version__} - Windows Agent Desktop: drive any Windows app like a person
@@ -28,12 +28,14 @@ def execute(name, ns):
         payload, text = COMMANDS[name].fn(ns)
         if payload.get("ok", True):
             workflow.replay_record(name, ns, payload)
+        report.capture_step(name, ns, payload, text)
         return payload, text
     except WadError as e:
         payload = {"ok": False, "code": e.code, "message": e.message, "hint": e.hint}
         text = f"ERROR {e.code}: {e.message}" + (f"\n  hint: {e.hint}" if e.hint else "")
         state.trace("error", {"command": name, "code": e.code, "message": e.message,
                               "ms": int((time.time() - started) * 1000)})
+        report.capture_step(name, ns, payload, text)
         return payload, text
     except Exception as e:                   # an app misbehaving must not kill an agent run
         payload = {"ok": False, "code": "INTERNAL", "message": f"{e.__class__.__name__}: {e}",

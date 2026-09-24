@@ -304,3 +304,30 @@ def test_selector_also_searches_the_apps_popups(app, run):
     run("click", "name=Save")
     out = run("click", "role=Button name=Cancel", "--window", "Untitled - Notepad")
     assert out["ok"]
+
+
+# --- visual step report ----------------------------------------------------------
+def test_step_report_is_off_by_default_and_records_when_on(app, run, tmp_path, monkeypatch):
+    from PIL import Image, ImageGrab
+    from wadlib import report
+    monkeypatch.setattr(ImageGrab, "grab", lambda bbox=None, all_screens=False:
+                        Image.new("RGB", (bbox[2] - bbox[0], bbox[3] - bbox[1]), "navy"))
+    run("report", "clear")
+    run("snapshot", "--window", "Notepad")
+    run("click", "name=Save")
+    assert run("report", "status")["report"] is False and run("report", "status")["steps"] == 0
+    assert run("report", "build")["code"] == "NOT_FOUND"
+
+    run("report", "on")
+    run("snapshot", "--window", "Notepad")               # read-only: not photographed
+    run("click", "name=Nothing")
+    run("type", "name=Password", "hunter2")
+    run("click", "name=Dead")                            # failures are reported too
+    run("report", "off")
+    run("click", "name=Nothing")
+    out = run("report", "build", "--out", str(tmp_path / "r.html"))
+    assert out["ok"] and out["steps"] == 3
+    page = (tmp_path / "r.html").read_text(encoding="utf-8")
+    assert page.count("data:image/jpeg;base64,") == 3 and "NOT_ENABLED" in page
+    assert "hunter2" not in page and 'class="step bad"' in page
+    assert os.path.isdir(report.report_dir())

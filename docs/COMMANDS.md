@@ -15,7 +15,7 @@ ones that build the command line and the MCP tools. Every command also takes
 | vision | [`screenshot`](#screenshot), [`click-xy`](#click-xy), [`ocr`](#ocr), [`click-text`](#click-text) |
 | office | [`excel-info`](#excel-info), [`excel-read`](#excel-read), [`excel-write`](#excel-write), [`excel-run`](#excel-run), [`word-read`](#word-read), [`word-write`](#word-write) |
 | system | [`shell`](#shell), [`file-read`](#file-read), [`file-write`](#file-write), [`file-list`](#file-list), [`process-list`](#process-list), [`process-kill`](#process-kill) |
-| workflow | [`batch`](#batch), [`trace`](#trace), [`doctor`](#doctor), [`guide`](#guide), [`mcp`](#mcp) |
+| workflow | [`report`](#report), [`batch`](#batch), [`trace`](#trace), [`doctor`](#doctor), [`guide`](#guide), [`mcp`](#mcp) |
 
 ## Observe - see what is on screen
 
@@ -700,6 +700,19 @@ wad process-kill WHICH
 | WHICH | text |  | pid or exe name |
 
 ## Workflow - batch, replay, setup
+
+### report
+
+The visual step report (OFF by default): on | off | status | build | clear.
+
+```
+wad report ACTION [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| ACTION | on \| off \| status \| build \| clear |  |  |
+| `--out` | text |  | build: the HTML file to write (default: in the report folder) |
 
 ### batch
 
