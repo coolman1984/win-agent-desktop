@@ -21,6 +21,7 @@ Nothing half-happens silently: when an input guard refuses, nothing was sent.
 | `NO_POPUP` | `--popup` found no menu/dialog of that app | Open it first; some apps draw menus inside the main window - snapshot that |
 | `NO_HANDLE` | The surface has no window handle | Snapshot its parent window and drill in with `--root` |
 | `APP_NOT_FOUND` | `launch` found no exe, shortcut or Store app | Give the full path to the .exe, or the Start menu name |
+| `DESKTOP_UNAVAILABLE` | wad is attached to a different Windows desktop than the one receiving user input | Run wad or `wad mcp` in the signed-in user's interactive desktop session; see `docs/COMPUTER_USE.md` |
 | `OPTION_NOT_FOUND` | `select` found no such option (the hint lists them) | Use one of the listed names |
 | `TEXT_NOT_FOUND` | OCR did not find the text | `ocr` to see what it reads; try `--lang`, a shorter text, or `screenshot --region` to zoom |
 

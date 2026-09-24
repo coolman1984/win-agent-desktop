@@ -299,7 +299,7 @@ def describe(ctrl):
         "offscreen": bool(ctrl.IsOffscreen),
         "rect": rect_of(ctrl),
         "actions": pats,
-        "value": value_of(ctrl) if "value" in pats else None,
+        "value": value_of(ctrl) if "value" in pats and not getattr(ctrl, "IsPassword", False) else None,
         "interactive": is_interactive(ctrl, pats),
     }
 

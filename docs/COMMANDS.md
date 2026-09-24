@@ -7,7 +7,7 @@ ones that build the command line and the MCP tools. Every command also takes
 
 | Group | Commands |
 |---|---|
-| observe | [`watch`](#watch), [`windows`](#windows), [`snapshot`](#snapshot), [`find`](#find), [`get`](#get), [`wait`](#wait) |
+| observe | [`watch`](#watch), [`windows`](#windows), [`snapshot`](#snapshot), [`find`](#find), [`get`](#get), [`wait`](#wait), [`desktop-check`](#desktop-check), [`inspect`](#inspect) |
 | act | [`click`](#click), [`type`](#type), [`clear`](#clear), [`check`](#check), [`uncheck`](#uncheck), [`expand`](#expand), [`collapse`](#collapse), [`select`](#select) |
 | mouse | [`right-click`](#right-click), [`double-click`](#double-click), [`hover`](#hover), [`drag`](#drag), [`scroll`](#scroll), [`scroll-to`](#scroll-to) |
 | keyboard | [`press`](#press), [`input-lang`](#input-lang), [`clipboard`](#clipboard) |
@@ -116,6 +116,37 @@ wad wait [options]
 | `--target` | text |  | a selector to wait for (role=Button name=OK) |
 | `--gone` | flag |  | wait until it disappears instead |
 | `--timeout` | number | `10.0` |  |
+
+_read-only_
+
+### desktop-check
+
+Check whether wad can see the user's interactive Windows desktop (useful when windows is empty or a Computer Use helper is unavailable).
+
+```
+wad desktop-check
+```
+
+_read-only_
+
+### inspect
+
+Check what wad can detect inside one window, or summarize all visible windows; optionally read pixels with OCR or a vision model.
+
+```
+wad inspect [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--window` `-w` | text |  | window title (exact, else a unique substring) |
+| `--hwnd` | integer |  | window handle (from `windows`) |
+| `--all` | flag |  | summarize every visible window |
+| `--depth` | integer |  | tree depth (default 1 for --all, 4 for one window) |
+| `--limit` | integer |  | maximum elements per window (default 40 for --all, 200 for one) |
+| `--visual` | flag |  | save a screenshot and try local Windows OCR |
+| `--model` | flag |  | also send the screenshot to the configured OmniParser server |
+| `--url` | text |  | OmniParser server URL (only with --model) |
 
 _read-only_
 

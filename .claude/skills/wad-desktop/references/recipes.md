@@ -4,18 +4,21 @@ Learned by driving them; each note is something that broke once.
 
 ## Any app: open your own, find by name, close cleanly
 
-```
-python wad.py launch notepad.exe --title Notepad        # waits for a NEW window only
-python wad.py snapshot --window "Untitled - Notepad" -i
-python wad.py type 'name~="text editor"' "Report draft"
-python wad.py press ctrl+s --window "Untitled - Notepad"
-python wad.py snapshot --window "Untitled - Notepad" --popup      # the Save As dialog
+```powershell
+$opened = python wad.py launch notepad.exe --title Notepad --json | ConvertFrom-Json
+python wad.py snapshot --hwnd $opened.hwnd -i        # inspect restored tabs/dialogs
+# If a missing-file dialog appears, inspect and dismiss it before continuing.
+python wad.py press ctrl+n --hwnd $opened.hwnd       # create your own blank tab
+python wad.py snapshot --hwnd $opened.hwnd -i        # verify Untitled + empty editor
+python wad.py type 'name="Text editor"' "Report draft" # only after that check
 ```
 
-`launch` ignores windows that were already open, so it never grabs the user's copy.
-Titles drift ("Untitled - Notepad" becomes "Report draft - Notepad" after saving); after
-the first snapshot, commands without `--window` use that window's handle, which does not
-drift.
+`launch` ignores windows that were already open, but Windows 11 Notepad may restore tabs
+from an earlier session in the new window. A missing-file dialog can block `ctrl+n`:
+inspect and dismiss that dialog, then create the blank tab. Never type into a restored
+tab. Titles drift ("Untitled - Notepad" becomes "Report draft - Notepad" after typing);
+after the first snapshot, commands without `--window` use that window's handle, which
+does not drift.
 
 ## Save As / Open dialogs (common file dialogs)
 

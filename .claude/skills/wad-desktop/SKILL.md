@@ -19,11 +19,17 @@ Full reference: `docs/COMMANDS.md`. Errors: `references/errors.md`. App recipes:
 
 ```
 python wad.py doctor          # Windows? packages? admin? keyboard layout? policy?
+python wad.py desktop-check   # does this process see the person's desktop?
 python wad.py windows         # what is open: handle, process, title
+python wad.py inspect --all  # which windows and controls are detectable?
 ```
 
 If doctor says "not administrator" and the app you need runs as administrator, wad
 cannot see it (Windows UIPI). Ask the person to run your terminal as administrator.
+If `desktop-check` returns `DESKTOP_UNAVAILABLE`, run wad from the signed-in user's
+interactive desktop session. Creating a file or named pipe does not move a process to
+that desktop. See `docs/COMPUTER_USE.md` for the project-owned MCP path when another
+Computer Use helper is unavailable.
 
 ## The loop
 
@@ -73,6 +79,7 @@ text to disappear. This is the cheapest way to never report a false success.
 | Slides | `ppt-read` / `ppt-add-slide` / `ppt-replace` / `ppt-save` (`--to x.pdf` exports) |
 | Web pages | `browser-launch` then `browser-snapshot` (refs b12), `browser-click`, `browser-type`, `browser-text` - far faster than the tree |
 | No tree (games, canvas, remote desktop, custom-drawn) | `screenshot` (look), `ocr`, `click-text "OK"`, `click-xy X Y`; icons without words: `detect` + `click-mark v7` |
+| Check what one app exposes | `inspect --window "<title>" --visual`; inspect `coverage` and `warnings` before relying on OCR |
 | Wait for something | `wait --window W --name "Done"` / `--target "role=Button name=OK"` / `--gone` |
 | What did the app just do? | `watch --seconds 10` (windows/menus opening and closing, focus moves - as events) |
 | Repeat a job | `trace --export flow.json`, then `batch flow.json` |

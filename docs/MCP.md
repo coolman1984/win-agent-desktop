@@ -3,12 +3,17 @@
 `python wad.py mcp` serves every wad command as an MCP tool over stdio (JSON-RPC 2.0,
 protocol 2025-06-18, older revisions accepted). The tools are generated from the same
 declarations as the command line, so names and arguments match `docs/COMMANDS.md`
-exactly: `snapshot`, `click`, `type`, `excel-write`, ...
+exactly: `inspect`, `snapshot`, `click`, `type`, `excel-write`, ...
+
+wad's MCP server is its project-owned computer-control connection. It does not depend on
+the separate Computer Use runtime or its native pipe. Run `wad desktop-check` in the
+same environment first; if it reports `DESKTOP_UNAVAILABLE`, launch the MCP server from
+the signed-in user's interactive desktop session. See [COMPUTER_USE.md](COMPUTER_USE.md).
 
 What a client gets:
 
 - **instructions** at connect time: the core loop and rules, so the model starts right.
-- **tool annotations**: `readOnlyHint` on observe tools (`snapshot`, `get`, `find`...),
+- **tool annotations**: `readOnlyHint` on observe tools (`inspect`, `snapshot`, `get`, `find`...),
   `destructiveHint` on system tools - clients can auto-approve reads and ask for writes.
 - **text results** by default (compact: refs, `changed:` lines, errors with a hint);
   pass `"json": true` in any call for the full payload.

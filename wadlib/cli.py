@@ -8,7 +8,7 @@ import time
 import uiautomation as auto
 
 from . import __version__, state, win32
-from . import browser, commands, office, record, report, system, vision, workflow  # noqa: F401
+from . import browser, commands, desktop, inspect, office, record, report, system, vision, workflow  # noqa: F401
 from .registry import COMMANDS, WadError, build_parser
 
 DESCRIPTION = f"""wad {__version__} - Windows Agent Desktop: drive any Windows app like a person

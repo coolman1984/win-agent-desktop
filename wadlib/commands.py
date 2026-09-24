@@ -92,7 +92,7 @@ def cmd_windows(args):
                      "pid": pid, "exe": exe})
     text = "\n".join(f"{r['hwnd']:>10}  pid {r['pid']:<7} {r['exe'][:18]:<18} {r['title'][:60]!r}"
                      for r in rows)
-    return ok(windows=rows), text or "(no windows)"
+    return ok(windows=rows), text or "(no windows; run `wad desktop-check` to check desktop access)"
 
 
 def _start_menu_shortcut(name):
@@ -139,6 +139,8 @@ def _store_app_id(name):
          Arg("timeout", float, default=20.0, help="seconds to wait for the window"),
          group="windows")
 def cmd_launch(args):
+    from .desktop import require_interactive
+    require_interactive()
     before = {w.NativeWindowHandle for w in uia.top_windows()}
     name = args.app
     how = None

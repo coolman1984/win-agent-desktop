@@ -175,6 +175,13 @@ def cmd_doctor(args):
         except Exception:
             add(mod, need, f"missing - {why}")
     if win32.IS_WINDOWS:
+        desktop = win32.desktop_info()
+        add("desktop", "fail" if desktop["accessible"] is False else
+            "ok" if desktop["accessible"] is True else "warn",
+            f"current {desktop['station']}\\{desktop['desktop']}; "
+            f"input {desktop['input_desktop']}" +
+            (" - run wad in the user's interactive desktop session" if
+             desktop["accessible"] is False else ""))
         admin = win32.is_admin()
         add("elevation", "ok" if admin else "info",
             "running as administrator: can drive every app" if admin else

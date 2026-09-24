@@ -15,8 +15,13 @@ common mistakes fail loudly instead of happening.
 | "Success" that did not happen | Every action reports observed changes; `type`/`check`/`select`/`clear`/`excel-write`/`word-write` read back and fail `VERIFY_FAILED`; `--expect` makes any action prove its effect. |
 | Acting on a disabled control | Refused before acting (`NOT_ENABLED`). |
 | Launch grabbing the user's own window | `launch` only accepts windows that did not exist before it ran. |
+| Launching from an isolated desktop where no user app is visible | `launch` checks desktop access first and fails `DESKTOP_UNAVAILABLE`; `desktop-check` explains where wad is running. |
 | Secrets in logs | Text typed into password fields is never logged; recorded flows use `${ENV:WAD_SECRET}`. |
 | A different keyboard layout garbling text | Text is sent as Unicode characters, not keys, so it arrives as written in any layout. |
+
+`launch` finding a new window does not mean the app opened a new document. Windows 11
+Notepad can restore existing tabs, including unsaved ones. Inspect the active tab and
+create a blank tab before entering test text.
 
 ## Mail, browser, recording, pictures
 

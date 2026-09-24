@@ -10,17 +10,22 @@ Windows and taken further ([how it compares](docs/COMPARISON.md)).
 ```powershell
 pip install -r requirements.txt                    # + requirements-ocr.txt for OCR
 python wad.py doctor                               # is this PC ready?
-python wad.py launch notepad.exe --title Notepad
-python wad.py snapshot --window Notepad -i         # interactive elements, with refs
-python wad.py type 'name~="text editor"' "مرحبا - hello"   # any language, verified
-python wad.py click e14 --expect "Save As"         # act, and prove the effect
+python wad.py desktop-check                        # can this process see the user desktop?
+python wad.py windows                              # list visible app windows
+python wad.py inspect --all                        # check what is detectable in open apps
+python wad.py inspect --window Notepad --visual    # accessible controls + screenshot + OCR
+python wad.py snapshot --window Notepad -i         # inspect an open app
 python wad.py mcp                                  # every command as an MCP tool
 ```
 
+Before typing a test in Notepad, create and verify a blank tab; Windows 11 may restore
+someone's existing tabs. See the [Notepad recipe](.claude/skills/wad-desktop/references/recipes.md).
+
 ## What it does
 
-- **See**: `snapshot` (skeleton with `--depth`, drill in with `--root`, menus/dialogs with
-  `--popup`), `find`, `get`, `wait`, `windows`.
+- **See**: `inspect` inventories visible windows or combines one window's accessible
+  controls with optional screenshot and OCR; `snapshot` (skeleton with `--depth`, drill
+  in with `--root`, menus/dialogs with `--popup`), `find`, `get`, `wait`, `windows`.
 - **Act without the mouse**: `click`, `type`, `clear`, `select`, `check`/`uncheck`,
   `expand`/`collapse`, `scroll`, `scroll-to`, `focus` - through UIA patterns, so they work
   on covered windows and never steal the pointer.
@@ -57,9 +62,22 @@ python wad.py mcp                                  # every command as an MCP too
   `trace --export flow.json` + `batch flow.json` repeat it without a model.
 - **MCP server** built in (`wad mcp`), generated from the same command declarations as
   the CLI ([MCP.md](docs/MCP.md)).
+- **Desktop access check**: `desktop-check` detects when an isolated execution desktop
+  cannot see the person's apps; `launch` refuses early in that case. wad's own MCP server
+  remains a computer-control path when a separate Computer Use runtime is unavailable
+  ([COMPUTER_USE.md](docs/COMPUTER_USE.md)).
 
 All commands: [docs/COMMANDS.md](docs/COMMANDS.md). In PowerShell write refs without
 `@` and wrap selectors in single quotes.
+
+## If the assistant cannot see your apps
+
+Run `python wad.py desktop-check` in the same Windows session as the assistant. If it
+says `desktop ready`, run `python wad.py windows` to see the available app windows. If it
+says `DESKTOP_UNAVAILABLE`, wad is running on a separate execution desktop. Start the
+assistant's wad MCP connection from your signed-in desktop session, as described in
+[COMPUTER_USE.md](docs/COMPUTER_USE.md). This project cannot repair the separate
+Computer Use plugin's missing native pipe; wad MCP provides its own connection.
 
 ## For agents
 
@@ -82,6 +100,8 @@ All commands: [docs/COMMANDS.md](docs/COMMANDS.md). In PowerShell write refs wit
 
 ## Things learned the hard way
 
+- A newly opened Windows 11 Notepad window can restore old tabs and show a missing-file
+  dialog. Create and verify a blank `Untitled` tab before typing test or draft text.
 - Setting an Excel cell through its ValuePattern reports success and reads back the
   new value, but Excel never stores it. Enter data the way a person does (or through
   COM), and verify by reading it back.

@@ -120,7 +120,6 @@ class Watcher:
     # -- fallback: fast polling with the same output ------------------------------------
     def _run_polling(self):
         self.mode = "polling"
-        self._ready.set()
         with auto.UIAutomationInitializerInThread():
             def windows():
                 out = {}
@@ -138,6 +137,9 @@ class Watcher:
                 except Exception:
                     return None
             seen, fcur = windows(), focus()
+            # A caller may create a window as soon as __enter__ returns. If readiness
+            # precedes this baseline, polling treats that new window as already seen.
+            self._ready.set()
             while not self._stop.wait(0.15):
                 now = windows()
                 for h, (name, pid, cls) in now.items():
@@ -165,8 +167,10 @@ class Watcher:
 def cmd_watch(args):
     pid = uia.find_window(args.window).ProcessId if args.window else None
     got = []
-    started = time.time()
     with Watcher(focus=not args.no_focus, pid=pid) as w:
+        # The requested duration starts after event registration or polling is ready.
+        # COM setup can consume seconds on a busy machine.
+        started = time.time()
         deadline = started + args.seconds
         while time.time() < deadline:
             ev = w.get(min(0.2, max(0.01, deadline - time.time())))

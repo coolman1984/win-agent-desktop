@@ -11,7 +11,9 @@ wadlib/
   verify.py             before/after fingerprints, changes, --expect
   inputs.py             keys, guarded real mouse, foreground and occlusion checks
   win32.py              raw Win32: foreground, layouts, DPI, elevation, Unicode SendInput
+  desktop.py            interactive-desktop check and launch preflight
   commands.py           observe / act / mouse / keyboard / windows commands
+  inspect.py            read-only window inventory and combined UIA / OCR / model inspection
   vision.py             screenshots, marks, coordinate mapping, Windows OCR
   office.py             Excel and Word through COM
   system.py             policy-gated shell / files / processes
@@ -37,6 +39,15 @@ Commands never print. They return `(payload, text)`: the payload for `--json`, M
 `json: true` and batch; the text for people and for token-frugal agents. Failures raise
 `WadError(code, message, hint)`; `cli.execute` turns every error - including unexpected
 exceptions from a misbehaving app - into a payload, logs it, and never crashes the caller.
+
+## Desktop access
+
+`win32.desktop_info` compares the current thread's Windows desktop with the input
+desktop. `desktop-check` exposes the result through the CLI and MCP. `launch` checks it
+before spawning an app: an isolated execution desktop may have working Win32 and UIA
+imports while seeing none of the person's windows. The check reports
+`DESKTOP_UNAVAILABLE` rather than launching an invisible app and timing out. This is a
+process placement problem; a file or named pipe cannot switch desktops.
 
 ## Seeing: snapshots and refs
 

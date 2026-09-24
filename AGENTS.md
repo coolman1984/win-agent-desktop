@@ -4,7 +4,9 @@
 [.claude/skills/wad-desktop/SKILL.md](.claude/skills/wad-desktop/SKILL.md) first (or run
 `python wad.py guide`). The short version:
 
-1. `python wad.py doctor`, then `python wad.py windows`.
+1. `python wad.py doctor`, then `python wad.py desktop-check`, then `python wad.py inspect --all`.
+   If desktop access fails, use the interactive-session setup in
+   [docs/COMPUTER_USE.md](docs/COMPUTER_USE.md) before trying to launch an app.
 2. `snapshot --window "<title>" -i` -> act on a ref or selector -> read the `changed:`
    lines -> snapshot again when the UI changed.
 3. Use `--expect "<text>"` when you know what success looks like; never repeat an action

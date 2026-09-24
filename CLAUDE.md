@@ -21,6 +21,9 @@ in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The agent-facing playbook is
 - **Anything app-specific learned the hard way** goes in a comment where it matters, in the
   README's "learned the hard way", and in `references/recipes.md` if agents need it.
 - Win32 calls live in `win32.py`, loaded lazily; everything else must import on Linux.
+- **Check desktop access before launching apps.** `desktop-check` distinguishes the
+  signed-in user's desktop from an isolated execution desktop. Keep the CLI and MCP
+  recovery steps in `docs/COMPUTER_USE.md` current when this behavior changes.
 - Comments explain *why* (the app behaviour that forced the code), not what.
 
 ## Testing

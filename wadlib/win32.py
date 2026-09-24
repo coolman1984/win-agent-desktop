@@ -42,6 +42,54 @@ def foreground():
     return api()[0].GetForegroundWindow() or 0
 
 
+def desktop_info():
+    """Identify the desktop this process sees and the desktop receiving user input.
+
+    A process on WinSta0\\exebox-* can run UIA successfully while seeing no windows on
+    WinSta0\\Default. A named pipe or ordinary file cannot change that desktop binding.
+    Return unknown fields when Windows denies the query instead of claiming access.
+    """
+    if not IS_WINDOWS:
+        return {"station": None, "desktop": None, "input_desktop": None,
+                "accessible": None}
+    from ctypes import wintypes
+
+    u32, k32, _, _ = api()
+    u32.GetProcessWindowStation.restype = wintypes.HANDLE
+    u32.GetThreadDesktop.argtypes = [wintypes.DWORD]
+    u32.GetThreadDesktop.restype = wintypes.HANDLE
+    u32.OpenInputDesktop.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    u32.OpenInputDesktop.restype = wintypes.HANDLE
+    u32.CloseDesktop.argtypes = [wintypes.HANDLE]
+    u32.GetUserObjectInformationW.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                              ctypes.c_void_p, wintypes.DWORD,
+                                              ctypes.POINTER(wintypes.DWORD)]
+
+    def name(handle):
+        if not handle:
+            return None
+        size = wintypes.DWORD()
+        u32.GetUserObjectInformationW(handle, 2, None, 0, ctypes.byref(size))  # UOI_NAME
+        if not size.value:
+            return None
+        buf = ctypes.create_unicode_buffer((size.value + 1) // ctypes.sizeof(ctypes.c_wchar))
+        return (buf.value if u32.GetUserObjectInformationW(
+            handle, 2, buf, ctypes.sizeof(buf), ctypes.byref(size)) else None)
+
+    station = name(u32.GetProcessWindowStation())
+    desktop = name(u32.GetThreadDesktop(k32.GetCurrentThreadId()))
+    input_handle = u32.OpenInputDesktop(0, False, 0x0001)  # DESKTOP_READOBJECTS
+    try:
+        input_desktop = name(input_handle)
+    finally:
+        if input_handle:
+            u32.CloseDesktop(input_handle)
+    accessible = (desktop.lower() == input_desktop.lower()
+                  if desktop and input_desktop else None)
+    return {"station": station, "desktop": desktop,
+            "input_desktop": input_desktop, "accessible": accessible}
+
+
 def pid_of(hwnd):
     u32, _, _, wintypes = api()
     pid = wintypes.DWORD()

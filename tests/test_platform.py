@@ -169,7 +169,8 @@ def test_excel_write_values_parsing():
     assert office._same("=SUM(A1:A2)", 3) and office._same(2, 2.0) and not office._same(2, "2x")
 
 
-def test_office_commands_explain_missing_pywin32(app, run):
+def test_office_commands_explain_missing_pywin32(app, run, monkeypatch):
+    monkeypatch.setitem(sys.modules, "pythoncom", None)
     out = run("excel-info")
     assert out["code"] == "MISSING_DEPENDENCY" and "pywin32" in out["hint"]
 
@@ -422,11 +423,26 @@ def test_wait_wakes_up_when_the_window_appears(app, run):
     assert out["ok"] and out["title"] == "Report ready"
 
 
-def test_watch_command_stops_on_until(app, run):
+def test_watch_command_stops_on_until(app, run, monkeypatch):
     import threading
+    from wadlib import events
+    def no_native_events(watcher):
+        raise RuntimeError("fake desktop uses polling")
+    monkeypatch.setattr(events.Watcher, "_run_events", no_native_events)
+    ready = threading.Event()
+    original_enter = events.Watcher.__enter__
+
+    def enter(watcher):
+        result = original_enter(watcher)
+        ready.set()
+        return result
+
+    monkeypatch.setattr(events.Watcher, "__enter__", enter)
+
     def later():
         import time
-        time.sleep(0.3)
+        assert ready.wait(5)
+        time.sleep(0.2)
         fake_uia.ROOT.add(fake_uia.Control("Window", "Error: disk full", hwnd=1700))
     threading.Thread(target=later).start()
     out = run("watch", "--seconds", "5", "--until", "disk full", "--no-focus")
