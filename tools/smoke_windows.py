@@ -283,7 +283,9 @@ def forms_record():
     wad("click", "role=Button name=Submit", "--headed", "--window", APP, "--no-verify")
     time.sleep(1.5)
     wad("record-stop")
-    out = json.loads(rec.communicate(timeout=60)[0])
+    raw, err = rec.communicate(timeout=60)
+    out = json.loads(raw) if raw.strip().startswith("{") else {"raw": raw, "stderr": err}
+    assert "steps" in out, out
     steps = out["steps"]
     typed = [st for st in steps if st["cmd"] == "type" and st.get("text") == "Recorded"]
     clicked = [st for st in steps if st["cmd"] == "click" and "Submit" in st["target"]]

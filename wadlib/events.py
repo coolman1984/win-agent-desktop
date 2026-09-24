@@ -29,7 +29,7 @@ class Watcher:
 
     def __init__(self, focus=True, pid=None):
         self.events, self.focus, self.pid = queue.Queue(), focus, pid
-        self.mode = None
+        self.mode, self.error = None, None
         self._stop = threading.Event()
         self._ready = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True, name="wad-events")
@@ -60,7 +60,8 @@ class Watcher:
     def _run(self):
         try:
             self._run_events()
-        except Exception:
+        except Exception as e:
+            self.error = f"{e.__class__.__name__}: {e}"
             self._run_polling()
 
     def _run_events(self):
@@ -174,10 +175,10 @@ def cmd_watch(args):
             got.append(ev)
             if args.until and args.until.lower() in ev["name"].lower():
                 break
-        mode = w.mode
+        mode, why = w.mode, w.error
     lines = [f"+{e['t'] - started:5.2f}s  {e['kind']:<14} {e['name']!r}" for e in got]
     head = f"{len(got)} events in {time.time() - started:.1f}s ({mode})"
-    return ({"ok": True, "events": got, "mode": mode},
+    return ({"ok": True, "events": got, "mode": mode, **({"fallback_reason": why} if why else {})},
             "\n".join([head] + lines) if lines else head)
 
 
