@@ -230,6 +230,14 @@ def _hooks(events, stop, ignore_injected):
     user32.CallNextHookEx.restype = LRESULT
     user32.SetWindowsHookExW.argtypes = [ctypes.c_int, PROC, wintypes.HINSTANCE, wintypes.DWORD]
     user32.SetWindowsHookExW.restype = wintypes.HHOOK
+    user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
+    # 64-bit handles: without these, ctypes cuts them to 32 bits and the hook is refused
+    kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+    kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+    user32.MsgWaitForMultipleObjects.argtypes = [wintypes.DWORD, ctypes.c_void_p, wintypes.BOOL,
+                                                 wintypes.DWORD, wintypes.DWORD]
+    user32.PeekMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT,
+                                    wintypes.UINT, wintypes.UINT]
     held = set()
 
     def on_mouse(code, wparam, lparam):
@@ -258,7 +266,8 @@ def _hooks(events, stop, ignore_injected):
     hm = user32.SetWindowsHookExW(14, mouse_proc, kernel32.GetModuleHandleW(None), 0)
     hk = user32.SetWindowsHookExW(13, key_proc, kernel32.GetModuleHandleW(None), 0)
     if not hm or not hk:
-        raise WadError("NOT_SUPPORTED", "Windows refused the input hooks",
+        err = ctypes.get_last_error() or kernel32.GetLastError()
+        raise WadError("NOT_SUPPORTED", f"Windows refused the input hooks (error {err})",
                        "another security tool may block them; run from a normal desktop")
     msg = wintypes.MSG()
     try:
