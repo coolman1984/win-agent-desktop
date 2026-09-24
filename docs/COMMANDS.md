@@ -14,7 +14,7 @@ ones that build the command line and the MCP tools. Every command also takes
 | windows | [`launch`](#launch), [`focus`](#focus), [`window`](#window), [`close`](#close) |
 | vision | [`screenshot`](#screenshot), [`click-xy`](#click-xy), [`ocr`](#ocr), [`click-text`](#click-text) |
 | browser | [`browser-launch`](#browser-launch), [`browser-tabs`](#browser-tabs), [`browser-open`](#browser-open), [`browser-snapshot`](#browser-snapshot), [`browser-click`](#browser-click), [`browser-type`](#browser-type), [`browser-text`](#browser-text), [`browser-wait`](#browser-wait), [`browser-eval`](#browser-eval), [`browser-screenshot`](#browser-screenshot), [`browser-close`](#browser-close) |
-| office | [`excel-info`](#excel-info), [`excel-read`](#excel-read), [`excel-write`](#excel-write), [`excel-run`](#excel-run), [`word-read`](#word-read), [`word-write`](#word-write) |
+| office | [`excel-info`](#excel-info), [`excel-read`](#excel-read), [`excel-write`](#excel-write), [`excel-run`](#excel-run), [`word-read`](#word-read), [`word-write`](#word-write), [`outlook-list`](#outlook-list), [`outlook-read`](#outlook-read), [`outlook-draft`](#outlook-draft), [`outlook-send`](#outlook-send), [`ppt-read`](#ppt-read), [`ppt-add-slide`](#ppt-add-slide), [`ppt-replace`](#ppt-replace), [`ppt-save`](#ppt-save) |
 | system | [`shell`](#shell), [`file-read`](#file-read), [`file-write`](#file-write), [`file-list`](#file-list), [`process-list`](#process-list), [`process-kill`](#process-kill) |
 | workflow | [`record`](#record), [`record-stop`](#record-stop), [`report`](#report), [`batch`](#batch), [`trace`](#trace), [`doctor`](#doctor), [`guide`](#guide), [`mcp`](#mcp) |
 
@@ -787,6 +787,133 @@ wad word-write TEXT [options]
 | `--find` | text |  | with --at replace: the text to replace (all occurrences) |
 | `--doc` | text |  | document name (default: the active one) |
 | `--start` | flag |  | start Word (with a new document) if it is not running |
+
+### outlook-list
+
+Recent mail in a folder: sender, subject, time, unread (newest first).
+
+```
+wad outlook-list [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--folder` | text | `inbox` | inbox | sent | drafts | deleted | Inbox/Sub |
+| `--limit` | integer | `20` |  |
+| `--unread` | flag |  | only unread |
+| `--search` | text |  | only subjects or senders containing this |
+| `--start` | flag |  | start Outlook if it is not running |
+
+_read-only_
+
+### outlook-read
+
+One message: headers, text, attachment names.
+
+```
+wad outlook-read WHICH [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| WHICH | text |  | its number in the last outlook-list, or its id |
+| `--max-chars` | integer | `20000` |  |
+| `--start` | flag |  |  |
+
+_read-only_
+
+### outlook-draft
+
+Write a mail and save it in Drafts - never sends; read back.
+
+```
+wad outlook-draft [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--to` | text |  | addresses, separated by ; (required) |
+| `--subject` | text |  |  (required) |
+| `--body` | text | `` |  |
+| `--cc` | text |  |  |
+| `--attach` | text |  | file paths, separated by ; |
+| `--show` | flag |  | also open it on screen for the person to review |
+| `--start` | flag |  |  |
+
+### outlook-send
+
+SEND a saved draft - only when the policy allows sending.
+
+```
+wad outlook-send WHICH [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| WHICH | text |  | the draft's id (from outlook-draft) |
+| `--start` | flag |  |  |
+
+### ppt-read
+
+The text of every slide (or one), with slide titles.
+
+```
+wad ppt-read [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--slide` | integer |  | only this slide number |
+| `--pres` | text |  | presentation name (default: the active one) |
+| `--start` | flag |  | start PowerPoint if it is not running |
+
+_read-only_
+
+### ppt-add-slide
+
+Add a slide with a title and body text; read back.
+
+```
+wad ppt-add-slide [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--title` | text |  |  (required) |
+| `--body` | text | `` | lines separated by \n |
+| `--layout` | title-content \| title-only \| blank \| title | `title-content` |  |
+| `--at` | integer |  | position (default: the end) |
+| `--pres` | text |  | presentation name (default: the active one) |
+| `--start` | flag |  | start PowerPoint if it is not running |
+
+### ppt-replace
+
+Replace text on every slide (shapes and tables); counts and checks.
+
+```
+wad ppt-replace [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--find` | text |  |  (required) |
+| `--replace` | text |  | the new text (required) |
+| `--pres` | text |  | presentation name (default: the active one) |
+| `--start` | flag |  | start PowerPoint if it is not running |
+
+### ppt-save
+
+Save the presentation (or --to a new file: .pptx, .pdf).
+
+```
+wad ppt-save [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--to` | text |  | save as this path instead; .pdf exports a PDF |
+| `--pres` | text |  | presentation name (default: the active one) |
+| `--start` | flag |  | start PowerPoint if it is not running |
 
 ## System - shell, files, processes (off by default)
 

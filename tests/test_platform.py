@@ -430,3 +430,48 @@ def test_watch_command_stops_on_until(app, run):
     threading.Thread(target=later).start()
     out = run("watch", "--seconds", "5", "--until", "disk full", "--no-focus")
     assert out["ok"] and out["events"][-1]["name"] == "Error: disk full"
+
+
+# --- Outlook and PowerPoint (stand-in Office) -------------------------------------
+@pytest.fixture
+def office_fakes(monkeypatch):
+    import fake_office
+    fakes = {"Outlook.Application": fake_office.Outlook(),
+             "PowerPoint.Application": fake_office.PowerPoint()}
+    monkeypatch.setattr(office, "app", lambda progid, start: fakes[progid])
+    return fakes
+
+
+def test_outlook_list_read_and_draft(app, run, office_fakes, tmp_path):
+    out = run("outlook-list")
+    assert [m["subject"] for m in out["mail"]] == ["Report ready", "Lunch?", "Invoice March"]
+    assert [m["subject"] for m in run("outlook-list", "--unread")["mail"]] == ["Lunch?"]
+    assert len(run("outlook-list", "--search", "sara")["mail"]) == 2
+    msg = run("outlook-read", "1")
+    assert msg["attachments"] == ["report.xlsx"] and msg["from"] == "Sara Ali"
+    f = tmp_path / "a.txt"
+    f.write_text("x")
+    d = run("outlook-draft", "--to", "boss@example.com", "--subject", "Status",
+            "--body", "Line 1\\nLine 2", "--attach", str(f))
+    mail = office_fakes["Outlook.Application"].store[d["id"]]
+    assert d["ok"] and mail.Body == "Line 1\nLine 2" and not mail.sent
+
+
+def test_outlook_send_needs_a_persons_permission(app, run, office_fakes):
+    d = run("outlook-draft", "--to", "a@b.c", "--subject", "Hi")
+    assert run("outlook-send", d["id"])["code"] == "POLICY_DENIED"
+    state.write_json(state.POLICY_FILE, {"allow_send": True})
+    assert run("outlook-send", d["id"])["ok"]
+    assert office_fakes["Outlook.Application"].store[d["id"]].sent
+
+
+def test_powerpoint_read_add_replace_save(app, run, office_fakes):
+    out = run("ppt-read")
+    assert [s["title"] for s in out["slides"]] == ["Q3 results", "Next steps"]
+    add = run("ppt-add-slide", "--title", "Risks", "--body", "Supply\\nHiring", "--at", "2")
+    assert add["ok"] and add["slides"] == 3
+    assert run("ppt-read", "--slide", "2")["slides"][0]["texts"] == ["Risks", "Supply\nHiring"]
+    rep = run("ppt-replace", "--find", "Q3", "--replace", "Q4")
+    assert rep["replaced"] == 1 and run("ppt-read", "--slide", "1")["slides"][0]["title"] == "Q4 results"
+    assert run("ppt-save", "--to", "C:/out/deck.pdf")["path"].endswith("deck.pdf")
+    assert run("ppt-read", "--slide", "9")["code"] == "NOT_FOUND"
