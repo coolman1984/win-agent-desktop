@@ -3,6 +3,7 @@
 A ref (e12) names one element of the last snapshot; it is cheap and exact, but it only
 lives until the next snapshot. A selector (role=Button name=Save) is searched live every
 time, so it survives restarts and is what recorded workflows use."""
+import difflib
 import re
 import shlex
 import time
@@ -10,7 +11,7 @@ from datetime import datetime
 
 import uiautomation as auto
 
-from . import state
+from . import state, win32
 from .registry import WadError
 
 INTERACTIVE_TYPES = {
@@ -76,7 +77,20 @@ def window_of(ctrl):
         cur = parent
 
 
+def responsive(w):
+    """Refuse up front to drive a window Windows itself reports as not responding."""
+    if w is not None and win32.is_hung(w.NativeWindowHandle):
+        raise WadError("APP_HUNG", f"{w.Name!r} is not responding",
+                       "wait for it to recover (`wait --window ... --timeout 30`), or ask the "
+                       "person - never click into a hung app")
+    return w
+
+
 def find_window(title=None, hwnd=None):
+    return responsive(_find_window(title, hwnd))
+
+
+def _find_window(title=None, hwnd=None):
     if hwnd:
         w = auto.ControlFromHandle(int(hwnd))
         if not w:
@@ -108,6 +122,15 @@ def find_window(title=None, hwnd=None):
         raise WadError("AMBIGUOUS_WINDOW", f"{len(hits)} windows match {title!r}: {names}",
                        "use the full title or --hwnd")
     return hits[0]
+
+
+def new_window(title, exclude=()):
+    """The window titled like `title` that is not in `exclude`, or None (one look)."""
+    low = title.lower()
+    fresh = [w for w in top_windows()
+             if low in w.Name.lower() and w.NativeWindowHandle not in exclude]
+    exact = [w for w in fresh if w.Name.lower() == low]
+    return (exact or fresh or [None])[0]
 
 
 def wait_window(title, timeout, exclude=()):
@@ -380,6 +403,7 @@ def resolve_ref(ref):
     if not ctrl or not alive(ctrl):
         raise WadError("WINDOW_GONE", f"window {snap['window']!r} is closed",
                        "launch the app again and take a new snapshot")
+    responsive(ctrl)
     for ctype, aid, name, index in el["path"]:
         kids = ctrl.GetChildren()
         same = [k for k in kids if k.ControlTypeName == ctype
@@ -518,17 +542,96 @@ def is_ref(target):
     return bool(REF_RE.match(target.strip()))
 
 
-def resolve_target(target, window=None, hwnd=None, timeout=0.0):
+def resolve_target(target, window=None, hwnd=None, timeout=0.0, heal=False):
     """(control, description, how-it-was-found, window handle) for a ref or a selector."""
     if not target:
         raise WadError("USAGE", "name a target: a ref (e12) or a selector (role=Button name=Save)")
     if is_ref(target):
         return resolve_ref(target)
     win = find_window(window, hwnd)
-    ctrl = find_selector(win, target, timeout)
+    how = "selector"
+    try:
+        ctrl = find_selector(win, target, timeout)
+    except WadError as e:
+        if e.code != "ELEMENT_NOT_FOUND":
+            raise
+        # Menus, drop-down lists and many dialogs are separate top-level windows of the
+        # same app, so a recorded step may name the main window but live in a popup.
+        ctrl = next((c for c in _in_app_popups(win, target)), None)
+        if ctrl is None and heal:
+            ctrl, target, score = heal_selector(win, target)
+            how = f"healed ({score:.0%})"
+        elif ctrl is None:
+            raise
     el = describe(ctrl)
     el["ref"] = target
-    return ctrl, el, "selector", win.NativeWindowHandle
+    return ctrl, el, how, win.NativeWindowHandle
+
+
+def _in_app_popups(win, text):
+    try:
+        pid, main = win.ProcessId, win.NativeWindowHandle
+        tops = [t for t in auto.GetRootControl().GetChildren()
+                if t.ProcessId == pid and t.NativeWindowHandle != main]
+    except Exception:
+        return
+    for t in tops:
+        try:
+            yield find_selector(t, text)
+        except WadError:
+            continue
+
+
+HEAL_MIN, HEAL_MARGIN = 0.72, 0.08
+
+
+def heal_selector(root, text):
+    """A step recorded against an older version of the app: the button was renamed
+    ("Save" -> "Save file"), its AutomationId changed, or it moved. Find the one element
+    that is clearly the same thing - same role, and the same AutomationId or a very
+    similar name - or give up. Never guess between close candidates."""
+    steps = parse_selector(text)
+    scope = _find_steps(root, steps[:-1], text) if len(steps) > 1 else root
+    terms = {k: v for k, _, v in steps[-1] if k != "nth"}
+    want_role = terms.get("role", "").lower().replace("control", "")
+    want_name = terms.get("name", "").lower()
+    want_aid = terms.get("aid", "").lower()
+    scored = []
+    try:
+        walked = list(auto.WalkControl(scope, includeTop=False, maxDepth=40))
+    except Exception:
+        walked = []
+    for ctrl, _d in walked:
+        try:
+            role = role_of(ctrl).lower()
+            if want_role and role != want_role:
+                continue
+            name, aid = (ctrl.Name or "").lower(), (ctrl.AutomationId or "").lower()
+        except Exception:
+            continue
+        score = 0.0
+        if want_aid and aid == want_aid:
+            score = 1.0
+        if want_name and name:
+            ratio = difflib.SequenceMatcher(None, want_name, name).ratio()
+            if want_name in name or name in want_name:
+                ratio = max(ratio, 0.8)
+            score = max(score, ratio)
+        if score:
+            scored.append((score, ctrl))
+    scored.sort(key=lambda t: -t[0])
+    if not scored or scored[0][0] < HEAL_MIN or (
+            len(scored) > 1 and scored[0][0] - scored[1][0] < HEAL_MARGIN):
+        near = "; ".join(f"{role_of(c)} {c.Name!r} ({s:.0%})" for s, c in scored[:3])
+        raise WadError("ELEMENT_NOT_FOUND", f"nothing matches {text!r}, and no single close "
+                       "match to heal it with" + (f" (nearest: {near})" if near else ""),
+                       "the app changed: snapshot it and fix this step's selector")
+    best = scored[0][1]
+    el = describe(best)
+    new = selector_for(el)
+    if len(steps) > 1:
+        new = text.rsplit(">>", 1)[0].strip() + " >> " + new
+    return best, new, scored[0][0]
 
 
 # ---------------------------------------------------------------------------

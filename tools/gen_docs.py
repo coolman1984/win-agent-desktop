@@ -16,6 +16,7 @@ GROUP_TITLES = {
     "keyboard": "Keyboard and clipboard",
     "windows": "Windows and apps",
     "vision": "Vision - pixels and OCR, for apps without a tree",
+    "browser": "Browser - Edge / Chrome from the inside (DevTools protocol)",
     "office": "Office - Excel and Word through their object model",
     "system": "System - shell, files, processes (off by default)",
     "workflow": "Workflow - batch, replay, setup",

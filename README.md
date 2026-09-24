@@ -33,7 +33,24 @@ python wad.py mcp                                  # every command as an MCP too
 - **Vision fallback** for apps without a tree: `screenshot` (with `--marks`), Windows'
   built-in `ocr`, `click-text`, `click-xy` in screenshot pixels.
 - **Office through COM**: `excel-info`, `excel-read`, `excel-write` (read back),
-  `excel-run`, `word-read`, `word-write`.
+  `excel-run`, `word-read`, `word-write`, `outlook-list/-read/-draft` (sending only when a
+  person allows it), `ppt-read`, `ppt-add-slide`, `ppt-replace`, `ppt-save`.
+- **Browsers from the inside**: `browser-launch` (Edge/Chrome, own profile, local-only
+  DevTools port), `browser-snapshot` (refs `b12`), `browser-click` (trusted clicks),
+  `browser-type` (React-safe, read back), `browser-text`, `-open`, `-tabs`, `-wait`,
+  `-eval`, `-screenshot`, `-close`.
+- **Smart eye** for icons without words: `detect` asks an OmniParser vision server what is
+  on screen (refs `v7`), `click-mark v7` clicks it ([VISION.md](docs/VISION.md)).
+- **Learns from a person**: `record job.json` watches them do the task (mouse and keyboard
+  hooks) and writes a replayable file; Ctrl+Shift+F12 stops.
+- **Heals itself**: a replayed step whose button was renamed finds the one clear match and
+  says so; it never guesses between close candidates.
+- **Survives frozen apps**: a hung app comes back as `APP_HUNG` instead of freezing the
+  agent with it (`WAD_WATCHDOG` seconds).
+- **Hears the desktop**: `watch` reports windows, menus and focus as UIA events; `wait`
+  and `launch` wake the moment a window appears.
+- **Step report, off by default**: `report on` photographs every action, `report build`
+  writes one HTML page of the whole run.
 - **System power, off by default**: `shell`, `file-read/-write/-list`, `process-list/-kill`
   behind a policy file and a never-allowed list ([SAFETY.md](docs/SAFETY.md)).
 - **Record once, replay forever**: every action is logged with a selector;
@@ -41,7 +58,7 @@ python wad.py mcp                                  # every command as an MCP too
 - **MCP server** built in (`wad mcp`), generated from the same command declarations as
   the CLI ([MCP.md](docs/MCP.md)).
 
-All 47 commands: [docs/COMMANDS.md](docs/COMMANDS.md). In PowerShell write refs without
+All commands: [docs/COMMANDS.md](docs/COMMANDS.md). In PowerShell write refs without
 `@` and wrap selectors in single quotes.
 
 ## For agents
@@ -90,6 +107,18 @@ All 47 commands: [docs/COMMANDS.md](docs/COMMANDS.md). In PowerShell write refs 
   reading the shown value after each step - which is what `select` falls back to.
 - OCR finds "Submit" inside "Submitted:" too; a whole-word match must win, or the click
   lands on the label instead of the button.
+- A child process that inherits our stdout keeps the pipe open after wad exits (the
+  caller waits forever), and under `wad mcp` its output would corrupt the protocol. Every
+  app wad starts is fully detached.
+- On company PCs `HTTP_PROXY` is often set, and even a request to `127.0.0.1` goes to the
+  proxy and hangs. Local DevTools traffic always bypasses proxies.
+- Windows silently removes a low-level input hook that answers too slowly, so the recorder
+  only queues raw events in the hook and does the accessibility lookups on another thread.
+- ctypes assumes every Windows function returns a 32-bit int. A module handle on 64-bit
+  Windows does not fit, and SetWindowsHookEx quietly refused the cut-down value. Every
+  handle-returning call needs its types declared.
+- A recorded "type" is the field's final value, read from the field - reconstructing text
+  from keystrokes gets paste, autocomplete, dead keys and backspace wrong.
 - An app running as administrator is invisible to a non-elevated automation process
   (UIPI); its tree comes back almost empty. wad says so instead of guessing.
 

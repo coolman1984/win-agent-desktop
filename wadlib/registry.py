@@ -30,9 +30,10 @@ class Arg:
 
 
 class Command:
-    def __init__(self, name, fn, help, args, group, mcp, readonly, image):
+    def __init__(self, name, fn, help, args, group, mcp, readonly, image, long):
         self.name, self.fn, self.help, self.args = name, fn, help, args
         self.group, self.mcp, self.readonly, self.image = group, mcp, readonly, image
+        self.long = long            # runs for as long as it was asked to: no watchdog
 
     def namespace(self, values):
         """argparse-style namespace from a dict (MCP arguments, a batch step)."""
@@ -59,13 +60,14 @@ class Command:
 
 
 COMMANDS = {}
-GROUPS = ["observe", "act", "mouse", "keyboard", "windows", "vision", "office", "system",
-          "workflow"]
+GROUPS = ["observe", "act", "mouse", "keyboard", "windows", "vision", "browser", "office",
+          "system", "workflow"]
 
 
-def command(name, help, *args, group="act", mcp=True, readonly=False, image=False):
+def command(name, help, *args, group="act", mcp=True, readonly=False, image=False,
+            long=False):
     def deco(fn):
-        COMMANDS[name] = Command(name, fn, help, list(args), group, mcp, readonly, image)
+        COMMANDS[name] = Command(name, fn, help, list(args), group, mcp, readonly, image, long)
         return fn
     return deco
 

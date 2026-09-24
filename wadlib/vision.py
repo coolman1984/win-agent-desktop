@@ -314,3 +314,131 @@ def cmd_click_text(args):
     state.trace("click-text", {"text": args.text, "x": x, "y": y})
     return ({"ok": True, "text": hit["text"], "screen_x": x, "screen_y": y},
             f"clicked {hit['text']!r} at ({x}, {y})")
+
+
+# ---------------------------------------------------------------------------
+# Smart eye - a vision model that finds buttons and icons in pixels (OmniParser)
+# ---------------------------------------------------------------------------
+DETECT_URL = os.environ.get("WAD_OMNIPARSER_URL", "http://127.0.0.1:8000")
+DETECT_FILE = os.path.join(state.STATE_DIR, "last_detect.json")
+
+
+def _post_json(url, body, timeout):
+    import json
+    import urllib.parse
+    import urllib.request
+    host = urllib.parse.urlparse(url).hostname or ""
+    handlers = [urllib.request.ProxyHandler({})] if host in ("127.0.0.1", "localhost") else []
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.build_opener(*handlers).open(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def detect(shot, url=DETECT_URL, timeout=120):
+    """Send the screenshot to an OmniParser server; return elements in screenshot pixels."""
+    import base64
+    with open(shot["path"], "rb") as fh:
+        b64 = base64.b64encode(fh.read()).decode("ascii")
+    try:
+        r = _post_json(url.rstrip("/") + "/parse/", {"base64_image": b64}, timeout)
+    except Exception as e:
+        raise WadError("DETECTOR_UNAVAILABLE", f"no OmniParser server at {url} ({e.__class__.__name__})",
+                       "start one (see docs/VISION.md) or set WAD_OMNIPARSER_URL; without it use "
+                       "ocr / click-text, or look at the screenshot yourself") from None
+    w, h = shot["size"]
+    out = []
+    for item in r.get("parsed_content_list") or []:
+        box = item.get("bbox") or [0, 0, 0, 0]
+        if max(box) <= 1.0:                     # OmniParser answers in fractions of the image
+            box = [box[0] * w, box[1] * h, box[2] * w, box[3] * h]
+        x1, y1, x2, y2 = (round(v) for v in box)
+        out.append({"ref": f"v{len(out) + 1}", "type": item.get("type", ""),
+                    "content": (item.get("content") or "").strip(),
+                    "interactive": bool(item.get("interactivity", True)),
+                    "box": [x1, y1, x2 - x1, y2 - y1], "center": [(x1 + x2) // 2, (y1 + y2) // 2]})
+    return out
+
+
+def ocr_elements(shot):
+    """detect's fallback: each OCR word as an element, in the same shape as the model's."""
+    shot = dict(shot, size=shot["size"])
+    out = []
+    for ln in ocr(shot):
+        for w in ln["words"]:
+            x, y, bw, bh = w["box"]
+            out.append({"ref": f"v{len(out) + 1}", "type": "text", "content": w["text"],
+                        "interactive": True, "box": [x, y, bw, bh],
+                        "center": [x + bw // 2, y + bh // 2]})
+    return out
+
+
+@command("detect", "find buttons, icons and text in the PIXELS with a vision model (OmniParser "
+         "server) - for apps with no accessibility tree; refs v1.. work with click-mark",
+         *window_args(), Arg("screen", bool), Arg("region", help="X,Y,WIDTH,HEIGHT in the window"),
+         Arg("interactive", bool, short="-i", help="only elements the model thinks are clickable"),
+         Arg("url", help="OmniParser server (default WAD_OMNIPARSER_URL or 127.0.0.1:8000)"),
+         Arg("marks", bool, help="also save a picture with the v-refs drawn on it"),
+         group="vision", readonly=True, image=True)
+def cmd_detect(args):
+    shot = capture(args.window, args.hwnd, args.screen, args.region)
+    mode = "model"
+    try:
+        found = detect(shot, args.url or DETECT_URL)
+    except WadError as e:
+        if e.code != "DETECTOR_UNAVAILABLE" or args.url:
+            raise
+        # No vision server: still give every piece of text on screen a v-ref, from
+        # Windows' own OCR - words are most of what gets clicked. Icons need the model.
+        try:
+            found = ocr_elements(shot)
+        except WadError:
+            raise e from None
+        mode = "ocr"
+    if args.interactive:
+        found = [e for e in found if e["interactive"]]
+    state.write_json(DETECT_FILE, {"shot": shot, "elements": found})
+    path = shot["path"]
+    pil = _pil()
+    if args.marks and pil is not None:
+        img = pil[0].open(path).convert("RGB")
+        d = pil[1].Draw(img)
+        for e in found:
+            x, y, w, h = e["box"]
+            d.rectangle([x, y, x + w, y + h], outline=(0, 160, 255), width=2)
+            d.rectangle([x, max(0, y - 14), x + 7 * len(e["ref"]) + 4, max(14, y)], fill=(0, 160, 255))
+            d.text((x + 2, max(0, y - 13)), e["ref"], fill=(255, 255, 255))
+        path = os.path.splitext(path)[0] + "-marks.png"
+        img.save(path)
+    lines = [f"{e['ref']:<5} {e['type']:<5} {'*' if e['interactive'] else ' '} "
+             f"{e['center'][0]:>5},{e['center'][1]:<5} {e['content'][:60]!r}" for e in found]
+    head = f"{len(found)} elements (* = clickable)"
+    if mode == "ocr":
+        head += " - text only (no vision server; icons without words need one, docs/VISION.md)"
+    return ({"ok": True, "elements": found, "path": path, "mode": mode},
+            "\n".join([head] + lines))
+
+
+@command("click-mark", "real mouse click on an element found by `detect` (v12), guarded",
+         Arg("ref", positional=True, help="v-ref from the last detect"),
+         Arg("button", choices=["left", "right"], default="left"), Arg("double", bool),
+         Arg("expect", help="fail unless this text appears afterwards"),
+         Arg("timeout", float, default=5.0), group="vision")
+def cmd_click_mark(args):
+    last = state.read_json(DETECT_FILE, ("NO_SNAPSHOT", "no detect result yet",
+                                         "run `wad detect --window ...` first"))
+    el = next((e for e in last["elements"] if e["ref"] == args.ref.lstrip("@")), None)
+    if el is None:
+        raise WadError("REF_NOT_FOUND", f"{args.ref} is not in the last detect result")
+    shot = last["shot"]
+    s = shot.get("scale") or 1.0
+    x, y = int(shot["origin"][0] + el["center"][0] / s), int(shot["origin"][1] + el["center"][1] / s)
+    if shot.get("hwnd"):
+        inputs.guard(shot["hwnd"])
+        _check_point_in_app(shot["hwnd"], x, y)
+    inputs.click_at(x, y, args.button, 2 if args.double else 1)
+    if args.expect and shot.get("hwnd"):
+        verify.expect(shot["hwnd"], args.expect, timeout=args.timeout)
+    state.trace("click-mark", {"ref": el["ref"], "content": el["content"], "x": x, "y": y})
+    return ({"ok": True, "screen_x": x, "screen_y": y, "content": el["content"]},
+            f"clicked {el['ref']} {el['content']!r} at ({x}, {y})")

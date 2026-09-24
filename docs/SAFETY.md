@@ -18,6 +18,26 @@ common mistakes fail loudly instead of happening.
 | Secrets in logs | Text typed into password fields is never logged; recorded flows use `${ENV:WAD_SECRET}`. |
 | A different keyboard layout garbling text | Text is sent as Unicode characters, not keys, so it arrives as written in any layout. |
 
+## Mail, browser, recording, pictures
+
+- **Mail is drafted, not sent.** `outlook-draft` only saves to Drafts. `outlook-send` refuses
+  until a person sets `"allow_send": true` in the policy file.
+- **The browser is wad's own.** `browser-launch` uses a separate profile under the state
+  folder (not the person's cookies and logins) and binds DevTools to 127.0.0.1. While it
+  is open, any program of the same Windows user can reach that port - `browser-close`
+  when done. `browser-eval` runs JavaScript in that page only.
+- **Recording captures what a person does** in the windows it watches (`--window` limits
+  it): clicks and final field values. Password fields are written as
+  `${ENV:WAD_SECRET}`, never their text. Recording only runs while `record` is running
+  and stops on Ctrl+Shift+F12.
+- **The step report is off by default.** When a person turns it on, it saves pictures of
+  the app after every action in the state folder; `report clear` deletes them. Password
+  text is masked in the report.
+- **The smart eye sends screenshots** to the OmniParser server you configure
+  (`WAD_OMNIPARSER_URL`). Keep it on your own machine or one you trust.
+- **Hung apps are left alone**: wad refuses to act on a window Windows reports as not
+  responding, and gives up on any call that does not return within the watchdog time.
+
 ## System commands (shell, files, processes)
 
 Off by default. A person enables them in

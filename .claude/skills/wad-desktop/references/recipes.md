@@ -75,13 +75,32 @@ drift.
 - Composing is fine; pressing Send is irreversible. Unless the task explicitly said to
   send, stop at a filled draft and ask.
 
-## Browsers (Edge, Chrome) and Electron apps (Teams, VS Code, Slack)
+## Browsers (Edge, Chrome)
+
+- Prefer `browser-*` (DevTools): `browser-launch`, `browser-snapshot`, `browser-click`,
+  `browser-type`. Names come from labels (`aria-label`, `<label for>`, placeholder), so
+  `text=Email` finds the field labelled Email.
+- wad's browser has its own profile: the person's saved logins are NOT there. If a task
+  needs their account, let them sign in in that window first.
+- The person's own, already-open browser can only be driven through the accessibility
+  tree (below) - do not close or reuse their tabs.
+- A click that did not change the page says so ("the page did not visibly change"): look
+  (`browser-text`, `browser-snapshot`) before clicking again.
+
+## Electron apps (Teams, VS Code, Slack) and web content through the tree
 
 - Web content is in the tree (Chromium exposes it): links are `Hyperlink`, fields are
   `Edit`, buttons `Button`. Snapshots of big pages are huge - use `--depth` and `--root`,
   or `find` / selectors with `name~=`.
 - Chromium builds the web tree lazily; if a page shows only a few elements, wait a second
   and snapshot again, or `click` inside the page once.
+
+## Outlook
+
+- `outlook-list` numbers the mails; `outlook-read 2` reads the 2nd. Drafts are safe:
+  `outlook-draft --to ... --subject ... --body "Line 1\nLine 2" --attach "C:\f.pdf"`.
+- Sending is irreversible and off: `outlook-send` works only after the person sets
+  `"allow_send": true` in the policy. Otherwise leave the draft and tell them.
 
 ## Old-style apps (WinForms, VB6, Delphi, MFC)
 

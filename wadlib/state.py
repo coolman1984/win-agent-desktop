@@ -14,10 +14,12 @@ STATE_DIR = os.environ.get("WAD_STATE_DIR") or os.path.join(
     os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "win-agent-desktop")
 _session = re.sub(r"[^A-Za-z0-9_-]", "", os.environ.get("WAD_SESSION", ""))
 _suffix = f"-{_session}" if _session else ""
+SESSION = _session
 SNAPSHOT_FILE = os.path.join(STATE_DIR, f"last_snapshot{_suffix}.json")
 SHOT_FILE = os.path.join(STATE_DIR, f"last_screenshot{_suffix}.json")
 TRACE_FILE = os.path.join(STATE_DIR, "trace.jsonl")
 POLICY_FILE = os.path.join(STATE_DIR, "policy.json")
+CONFIG_FILE = os.path.join(STATE_DIR, "config.json")
 SHOTS_DIR = os.path.join(STATE_DIR, "shots")
 
 

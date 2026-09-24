@@ -7,17 +7,35 @@ ones that build the command line and the MCP tools. Every command also takes
 
 | Group | Commands |
 |---|---|
-| observe | [`windows`](#windows), [`snapshot`](#snapshot), [`find`](#find), [`get`](#get), [`wait`](#wait) |
+| observe | [`watch`](#watch), [`windows`](#windows), [`snapshot`](#snapshot), [`find`](#find), [`get`](#get), [`wait`](#wait) |
 | act | [`click`](#click), [`type`](#type), [`clear`](#clear), [`check`](#check), [`uncheck`](#uncheck), [`expand`](#expand), [`collapse`](#collapse), [`select`](#select) |
 | mouse | [`right-click`](#right-click), [`double-click`](#double-click), [`hover`](#hover), [`drag`](#drag), [`scroll`](#scroll), [`scroll-to`](#scroll-to) |
 | keyboard | [`press`](#press), [`input-lang`](#input-lang), [`clipboard`](#clipboard) |
 | windows | [`launch`](#launch), [`focus`](#focus), [`window`](#window), [`close`](#close) |
-| vision | [`screenshot`](#screenshot), [`click-xy`](#click-xy), [`ocr`](#ocr), [`click-text`](#click-text) |
-| office | [`excel-info`](#excel-info), [`excel-read`](#excel-read), [`excel-write`](#excel-write), [`excel-run`](#excel-run), [`word-read`](#word-read), [`word-write`](#word-write) |
+| vision | [`screenshot`](#screenshot), [`click-xy`](#click-xy), [`ocr`](#ocr), [`click-text`](#click-text), [`detect`](#detect), [`click-mark`](#click-mark) |
+| browser | [`browser-launch`](#browser-launch), [`browser-tabs`](#browser-tabs), [`browser-open`](#browser-open), [`browser-snapshot`](#browser-snapshot), [`browser-click`](#browser-click), [`browser-type`](#browser-type), [`browser-text`](#browser-text), [`browser-wait`](#browser-wait), [`browser-eval`](#browser-eval), [`browser-screenshot`](#browser-screenshot), [`browser-close`](#browser-close) |
+| office | [`excel-info`](#excel-info), [`excel-read`](#excel-read), [`excel-write`](#excel-write), [`excel-run`](#excel-run), [`word-read`](#word-read), [`word-write`](#word-write), [`outlook-list`](#outlook-list), [`outlook-read`](#outlook-read), [`outlook-draft`](#outlook-draft), [`outlook-send`](#outlook-send), [`ppt-read`](#ppt-read), [`ppt-add-slide`](#ppt-add-slide), [`ppt-replace`](#ppt-replace), [`ppt-save`](#ppt-save) |
 | system | [`shell`](#shell), [`file-read`](#file-read), [`file-write`](#file-write), [`file-list`](#file-list), [`process-list`](#process-list), [`process-kill`](#process-kill) |
-| workflow | [`batch`](#batch), [`trace`](#trace), [`doctor`](#doctor), [`guide`](#guide), [`mcp`](#mcp) |
+| workflow | [`record`](#record), [`record-stop`](#record-stop), [`report`](#report), [`batch`](#batch), [`trace`](#trace), [`doctor`](#doctor), [`guide`](#guide), [`mcp`](#mcp) |
 
 ## Observe - see what is on screen
+
+### watch
+
+Listen for a while and report what the desktop did: windows and menus opening/closing, focus moves (UIA events).
+
+```
+wad watch [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--seconds` | number | `10.0` | how long to listen |
+| `--window` `-w` | text |  | only events from this window's app |
+| `--no-focus` | flag |  | leave out focus changes |
+| `--until` | text |  | stop early when an event's name contains this text |
+
+_read-only_
 
 ### windows
 
@@ -514,6 +532,199 @@ wad click-text TEXT [options]
 | `--expect` | text |  | fail unless this text appears afterwards |
 | `--timeout` | number | `5.0` |  |
 
+### detect
+
+Find buttons, icons and text in the PIXELS with a vision model (OmniParser server) - for apps with no accessibility tree; refs v1.. work with click-mark.
+
+```
+wad detect [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--window` `-w` | text |  | window title (exact, else a unique substring) |
+| `--hwnd` | integer |  | window handle (from `windows`) |
+| `--screen` | flag |  |  |
+| `--region` | text |  | X,Y,WIDTH,HEIGHT in the window |
+| `--interactive` `-i` | flag |  | only elements the model thinks are clickable |
+| `--url` | text |  | OmniParser server (default WAD_OMNIPARSER_URL or 127.0.0.1:8000) |
+| `--marks` | flag |  | also save a picture with the v-refs drawn on it |
+
+_read-only, MCP result includes the image_
+
+### click-mark
+
+Real mouse click on an element found by `detect` (v12), guarded.
+
+```
+wad click-mark REF [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| REF | text |  | v-ref from the last detect |
+| `--button` | left \| right | `left` |  |
+| `--double` | flag |  |  |
+| `--expect` | text |  | fail unless this text appears afterwards |
+| `--timeout` | number | `5.0` |  |
+
+## Browser - Edge / Chrome from the inside (DevTools protocol)
+
+### browser-launch
+
+Start Edge or Chrome with its own profile and a local-only DevTools port, for the browser-* commands.
+
+```
+wad browser-launch [URL] [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| URL | text |  | page to open |
+| `--browser` | edge \| chrome | `edge` |  |
+| `--port` | integer | `9222` |  |
+| `--headless` | flag |  | no visible window |
+| `--exe` | text |  | path to another Chromium-based browser (Brave, Chromium, ...) |
+
+### browser-tabs
+
+List the wad browser's tabs; --use N makes tab N the current one.
+
+```
+wad browser-tabs [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--use` | integer |  | 1-based tab number to make current |
+
+_read-only_
+
+### browser-open
+
+Go to a URL in the current tab (or --new-tab) and wait for it to load.
+
+```
+wad browser-open URL [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| URL | text |  |  |
+| `--new-tab` | flag |  |  |
+| `--expect` | text |  | fail unless this text appears on the page |
+| `--timeout` | number | `15.0` |  |
+
+### browser-snapshot
+
+The page's clickable and fillable elements, with refs (b12).
+
+```
+wad browser-snapshot [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--limit` | integer | `300` |  |
+
+_read-only_
+
+### browser-click
+
+Click an element of the page with a real (trusted) mouse event.
+
+```
+wad browser-click TARGET [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| TARGET | text |  | b12 | text=Sign in | a CSS selector |
+| `--nth` | integer |  | which match, when several do |
+| `--expect` | text |  | fail unless this text appears on the page afterwards |
+| `--timeout` | number | `5.0` |  |
+
+### browser-type
+
+Type into a page field like a person (works with React/Angular forms); read back.
+
+```
+wad browser-type TARGET TEXT [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| TARGET | text |  | b12 | text=Email | a CSS selector |
+| TEXT | text |  |  |
+| `--nth` | integer |  | which match, when several do |
+| `--append` | flag |  | add to what is there |
+| `--submit` | flag |  | press Enter afterwards |
+
+### browser-text
+
+The visible text of the page (or of one element).
+
+```
+wad browser-text [TARGET] [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| TARGET | text |  | b12 | text=... | CSS (default: page) |
+| `--max-chars` | integer | `20000` |  |
+
+_read-only_
+
+### browser-wait
+
+Wait until text is on the page (or --gone).
+
+```
+wad browser-wait TEXT [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| TEXT | text |  |  |
+| `--gone` | flag |  |  |
+| `--timeout` | number | `10.0` |  |
+
+_read-only_
+
+### browser-eval
+
+Run JavaScript in the page and return its (JSON) result.
+
+```
+wad browser-eval SCRIPT
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| SCRIPT | text |  | an expression; wrap statements in (() => {...})() |
+
+### browser-screenshot
+
+Capture the page as PNG (the viewport).
+
+```
+wad browser-screenshot [OUT]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| OUT | text |  |  |
+
+_read-only, MCP result includes the image_
+
+### browser-close
+
+Close the wad browser (and its DevTools port).
+
+```
+wad browser-close
+```
+
 ## Office - Excel and Word through their object model
 
 ### excel-info
@@ -613,6 +824,133 @@ wad word-write TEXT [options]
 | `--doc` | text |  | document name (default: the active one) |
 | `--start` | flag |  | start Word (with a new document) if it is not running |
 
+### outlook-list
+
+Recent mail in a folder: sender, subject, time, unread (newest first).
+
+```
+wad outlook-list [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--folder` | text | `inbox` | inbox | sent | drafts | deleted | Inbox/Sub |
+| `--limit` | integer | `20` |  |
+| `--unread` | flag |  | only unread |
+| `--search` | text |  | only subjects or senders containing this |
+| `--start` | flag |  | start Outlook if it is not running |
+
+_read-only_
+
+### outlook-read
+
+One message: headers, text, attachment names.
+
+```
+wad outlook-read WHICH [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| WHICH | text |  | its number in the last outlook-list, or its id |
+| `--max-chars` | integer | `20000` |  |
+| `--start` | flag |  |  |
+
+_read-only_
+
+### outlook-draft
+
+Write a mail and save it in Drafts - never sends; read back.
+
+```
+wad outlook-draft [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--to` | text |  | addresses, separated by ; (required) |
+| `--subject` | text |  |  (required) |
+| `--body` | text | `` |  |
+| `--cc` | text |  |  |
+| `--attach` | text |  | file paths, separated by ; |
+| `--show` | flag |  | also open it on screen for the person to review |
+| `--start` | flag |  |  |
+
+### outlook-send
+
+SEND a saved draft - only when the policy allows sending.
+
+```
+wad outlook-send WHICH [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| WHICH | text |  | the draft's id (from outlook-draft) |
+| `--start` | flag |  |  |
+
+### ppt-read
+
+The text of every slide (or one), with slide titles.
+
+```
+wad ppt-read [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--slide` | integer |  | only this slide number |
+| `--pres` | text |  | presentation name (default: the active one) |
+| `--start` | flag |  | start PowerPoint if it is not running |
+
+_read-only_
+
+### ppt-add-slide
+
+Add a slide with a title and body text; read back.
+
+```
+wad ppt-add-slide [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--title` | text |  |  (required) |
+| `--body` | text | `` | lines separated by \n |
+| `--layout` | title-content \| title-only \| blank \| title | `title-content` |  |
+| `--at` | integer |  | position (default: the end) |
+| `--pres` | text |  | presentation name (default: the active one) |
+| `--start` | flag |  | start PowerPoint if it is not running |
+
+### ppt-replace
+
+Replace text on every slide (shapes and tables); counts and checks.
+
+```
+wad ppt-replace [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--find` | text |  |  (required) |
+| `--replace` | text |  | the new text (required) |
+| `--pres` | text |  | presentation name (default: the active one) |
+| `--start` | flag |  | start PowerPoint if it is not running |
+
+### ppt-save
+
+Save the presentation (or --to a new file: .pptx, .pdf).
+
+```
+wad ppt-save [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--to` | text |  | save as this path instead; .pdf exports a PDF |
+| `--pres` | text |  | presentation name (default: the active one) |
+| `--start` | flag |  | start PowerPoint if it is not running |
+
 ## System - shell, files, processes (off by default)
 
 ### shell
@@ -701,6 +1039,44 @@ wad process-kill WHICH
 
 ## Workflow - batch, replay, setup
 
+### record
+
+Watch a PERSON do a task and save it as a replayable batch file (stop with Ctrl+Shift+F12, `record-stop`, or --seconds).
+
+```
+wad record [OUT] [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| OUT | text |  | the batch file to write |
+| `--window` `-w` | text |  | only record in windows whose title contains this |
+| `--seconds` | number |  | stop by itself after this long |
+| `--ignore-injected` | flag |  | skip synthetic input (other tools, remote control) - only real hands |
+
+_command line only_
+
+### record-stop
+
+Stop a running `record` (from another terminal or agent).
+
+```
+wad record-stop
+```
+
+### report
+
+The visual step report (OFF by default): on | off | status | build | clear.
+
+```
+wad report ACTION [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| ACTION | on \| off \| status \| build \| clear |  |  |
+| `--out` | text |  | build: the HTML file to write (default: in the report folder) |
+
 ### batch
 
 Run a JSON list of steps in one go (a recorded or hand-written workflow).
@@ -713,6 +1089,8 @@ wad batch FILE [options]
 |---|---|---|---|
 | FILE | text |  | JSON: [{"cmd": "click", "target": "role=Button name=OK"}, {"sleep": 0.5}, ...] |
 | `--keep-going` | flag |  | continue after a failed step |
+| `--no-heal` | flag |  | fail on a changed element instead of healing the step |
+| `--save-healed` | flag |  | write healed selectors back into the batch file |
 
 ### trace
 

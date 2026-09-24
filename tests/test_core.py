@@ -262,3 +262,27 @@ def test_expand_msaa_combo_with_keys_and_read_legacy_state(app, run):
     assert run("get", "role=ComboBox name=Color")["expanded"] is True
     assert run("collapse", "role=ComboBox name=Color")["ok"]
     assert app["legacy"].State == 0x400
+
+
+def test_watchdog_turns_a_frozen_app_into_app_hung(app, run, monkeypatch):
+    """A UIA call into an app that stopped pumping messages never returns."""
+    import threading
+    from wadlib import cli
+    from wadlib.registry import COMMANDS
+    release = threading.Event()
+
+    def frozen(args):
+        release.wait(10)
+        return {"ok": True}, "late"
+    monkeypatch.setattr(cli, "WATCHDOG", 0.3)
+    monkeypatch.setattr(COMMANDS["windows"], "fn", frozen)
+    from wadlib.registry import COMMANDS as C
+    payload, text = cli.execute_guarded("windows", C["windows"].namespace({}))
+    release.set()
+    assert payload["code"] == "APP_HUNG" and payload["hung"]
+
+
+def test_window_reported_hung_by_windows_is_refused(app, run, monkeypatch):
+    monkeypatch.setattr(win32, "is_hung", lambda hwnd: hwnd == 1001)
+    out = run("snapshot", "--window", "Notepad")
+    assert out["code"] == "APP_HUNG"

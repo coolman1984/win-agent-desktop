@@ -10,7 +10,7 @@ import time
 
 import uiautomation as auto
 
-from . import inputs, state, uia, verify, win32
+from . import events, inputs, state, uia, verify, win32
 from .registry import Arg, WadError, command, target_arg, verify_args, window_args
 
 APPS = {
@@ -21,6 +21,18 @@ APPS = {
 
 # Windows whose ValuePattern accepts a value, reads it back, and throws it away.
 VALUE_LIARS = {"XLMAIN"}
+
+
+def spawn(cmd):
+    """Start an app fully detached from us. A child that inherits our stdout keeps the
+    pipe open after wad exits (the caller waits forever) and, under `wad mcp`, anything
+    it prints would corrupt the protocol stream."""
+    flags = 0
+    if win32.IS_WINDOWS:
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008        # DETACHED_PROCESS
+    return subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, creationflags=flags,
+                            start_new_session=not win32.IS_WINDOWS)
 
 
 def ok(**payload):
@@ -54,8 +66,12 @@ def preflight(ctrl, el):
 
 
 def target(args, timeout=0.0):
-    return uia.resolve_target(args.target, getattr(args, "window", None),
-                              getattr(args, "hwnd", None), timeout)
+    ctrl, el, how, hwnd = uia.resolve_target(args.target, getattr(args, "window", None),
+                                             getattr(args, "hwnd", None), timeout,
+                                             heal=getattr(args, "_heal", False))
+    if how.startswith("healed"):
+        args._healed = {"old": args.target, "new": el["ref"], "how": how}
+    return ctrl, el, how, hwnd
 
 
 # ---------------------------------------------------------------------------
@@ -127,10 +143,10 @@ def cmd_launch(args):
     name = args.app
     how = None
     if name.lower() in APPS:
-        subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{APPS[name.lower()]}"])
+        spawn(["explorer.exe", f"shell:AppsFolder\\{APPS[name.lower()]}"])
         how = "store app"
     elif os.path.exists(name) or shutil.which(name):
-        subprocess.Popen([shutil.which(name) or name])
+        spawn([shutil.which(name) or name])
         how = "executable"
     else:
         lnk = _start_menu_shortcut(name)
@@ -142,10 +158,13 @@ def cmd_launch(args):
             if not app_id:
                 raise WadError("APP_NOT_FOUND", f"no executable, shortcut or app named {name!r}",
                                "give the full path to the .exe, or the name as shown in Start")
-            subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
+            spawn(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
             how = "store app"
     title = args.title or os.path.splitext(os.path.basename(name))[0]
-    w = uia.wait_window(title, args.timeout, exclude=before)
+    w = events.wait_for(lambda: uia.new_window(title, before), args.timeout)
+    if w is None:
+        raise WadError("TIMEOUT", f"no new window titled like {title!r} within {args.timeout}s",
+                       "pass --title with the real window title (see `wad windows`)")
     state.trace("launch", {"app": name, "hwnd": w.NativeWindowHandle, "via": how})
     return (ok(hwnd=w.NativeWindowHandle, title=w.Name, via=how),
             f"launched {w.Name!r}  hwnd {w.NativeWindowHandle}  ({how})")
@@ -273,7 +292,10 @@ def cmd_wait(args):
                     raise WadError("TIMEOUT", f"window {args.window!r} still open")
                 time.sleep(0.3)
             return ok(), f"window {args.window!r} is gone"
-        w = uia.wait_window(args.window, args.timeout)
+        w = events.wait_for(lambda: uia.new_window(args.window), args.timeout)
+        if w is None:
+            raise WadError("TIMEOUT", f"no window titled like {args.window!r} within "
+                           f"{args.timeout}s", "check the title with `wad windows`")
         return ok(hwnd=w.NativeWindowHandle, title=w.Name), f"window {w.Name!r} is open"
     while True:
         try:

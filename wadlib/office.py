@@ -6,6 +6,7 @@ through COM it takes a blink, includes formulas and hidden rows, and writes real
 stick. wad attaches to the Excel / Word the user already has open (never a hidden one
 unless --start), and still reads every write back."""
 import json
+import os
 import time
 
 from . import state
@@ -33,12 +34,16 @@ def _com():
 def patient(fn, timeout=10.0):
     """Office refuses COM calls while a cell is being edited or a dialog is open. Retry
     for a while, then say what to do instead of hanging."""
-    _, pywintypes, _ = _com()
+    try:
+        import pywintypes
+        com_error = pywintypes.com_error
+    except ImportError:                  # only reachable with a stand-in Office (tests)
+        com_error = ()
     deadline = time.time() + timeout
     while True:
         try:
             return fn()
-        except pywintypes.com_error as e:
+        except com_error as e:
             if e.hresult not in BUSY or time.time() > deadline:
                 if e.hresult in BUSY:
                     raise WadError("OFFICE_BUSY", "Office is busy and refuses automation",
@@ -370,3 +375,303 @@ def cmd_word_write(args):
         raise WadError("VERIFY_FAILED", f"{args.find!r} is still in the document")
     state.trace("word-write", {"doc": name, "chars": len(args.text), "at": args.at})
     return {"ok": True, "doc": name}, f"wrote {len(args.text)} chars to {name} ({args.at}) - checked"
+
+
+# ---------------------------------------------------------------------------
+# Outlook - reading and drafting freely; SENDING only when a person allowed it
+# ---------------------------------------------------------------------------
+FOLDERS = {"inbox": 6, "sent": 5, "drafts": 16, "outbox": 4, "deleted": 3, "junk": 23}
+OUTLOOK_LAST = "outlook_last.json"
+
+
+def _folder(ns, name):
+    key = (name or "inbox").lower()
+    if key in FOLDERS:
+        return ns.GetDefaultFolder(FOLDERS[key])
+    folder = ns.GetDefaultFolder(6).Parent            # the mailbox root
+    for part in name.replace("\\", "/").split("/"):
+        try:
+            folder = folder.Folders(part)
+        except Exception:
+            raise WadError("NOT_FOUND", f"no mail folder {name!r}",
+                           "inbox, sent, drafts, outbox, deleted, junk, or Inbox/Sub") from None
+    return folder
+
+
+def _outlook(start):
+    o = app("Outlook.Application", start)
+    return o, o.GetNamespace("MAPI")
+
+
+@command("outlook-list", "recent mail in a folder: sender, subject, time, unread (newest first)",
+         Arg("folder", default="inbox", help="inbox | sent | drafts | deleted | Inbox/Sub"),
+         Arg("limit", int, default=20), Arg("unread", bool, help="only unread"),
+         Arg("search", help="only subjects or senders containing this"),
+         Arg("start", bool, help="start Outlook if it is not running"),
+         group="office", readonly=True)
+def cmd_outlook_list(args):
+    _, ns = _outlook(args.start)
+
+    def read():
+        items = _folder(ns, args.folder).Items
+        items.Sort("[ReceivedTime]", True)
+        if args.unread:
+            items = items.Restrict("[UnRead] = True")
+        rows, want = [], (args.search or "").lower()
+        for i in range(1, items.Count + 1):
+            it = items.Item(i)
+            if getattr(it, "Class", 43) != 43:        # 43 = MailItem; skip meeting notices
+                continue
+            subject, sender = it.Subject or "", getattr(it, "SenderName", "") or ""
+            if want and want not in subject.lower() and want not in sender.lower():
+                continue
+            rows.append({"n": len(rows) + 1, "id": it.EntryID, "subject": subject,
+                         "from": sender, "received": str(getattr(it, "ReceivedTime", "")),
+                         "unread": bool(getattr(it, "UnRead", False))})
+            if len(rows) >= args.limit:
+                break
+        return rows
+    rows = patient(read, timeout=30)
+    state.write_json(os.path.join(state.STATE_DIR, OUTLOOK_LAST), [r["id"] for r in rows])
+    text = "\n".join(f"{r['n']:>3} {'*' if r['unread'] else ' '} {r['received'][:16]}  "
+                     f"{r['from'][:24]:<24} {r['subject'][:70]}" for r in rows) or "(no mail)"
+    return {"ok": True, "mail": rows}, text
+
+
+def _item(ns, which):
+    ref = str(which)
+    if ref.isdigit() and len(ref) < 6:              # a number from the last outlook-list
+        ids = state.read_json(os.path.join(state.STATE_DIR, OUTLOOK_LAST), None) or []
+        if not 1 <= int(ref) <= len(ids):
+            raise WadError("NOT_FOUND", f"no message #{ref} in the last outlook-list",
+                           "run outlook-list first, or pass the message id")
+        ref = ids[int(ref) - 1]
+    try:
+        return ns.GetItemFromID(ref)
+    except Exception:
+        raise WadError("NOT_FOUND", "no mail item with that id (moved or deleted?)",
+                       "run outlook-list again") from None
+
+
+@command("outlook-read", "one message: headers, text, attachment names",
+         Arg("which", positional=True, help="its number in the last outlook-list, or its id"),
+         Arg("max-chars", int, default=20000), Arg("start", bool),
+         group="office", readonly=True)
+def cmd_outlook_read(args):
+    _, ns = _outlook(args.start)
+
+    def read():
+        it = _item(ns, args.which)
+        atts = [it.Attachments.Item(i).FileName for i in range(1, it.Attachments.Count + 1)]
+        return {"subject": it.Subject, "from": getattr(it, "SenderName", ""),
+                "from_address": getattr(it, "SenderEmailAddress", ""), "to": it.To,
+                "cc": it.CC, "received": str(getattr(it, "ReceivedTime", "")),
+                "body": (it.Body or "")[:args.max_chars], "attachments": atts}
+    m = patient(read, timeout=30)
+    text = (f"From: {m['from']} <{m['from_address']}>\nTo: {m['to']}\n"
+            + (f"Cc: {m['cc']}\n" if m["cc"] else "") + f"Date: {m['received']}\n"
+            f"Subject: {m['subject']}\n" + (f"Attachments: {', '.join(m['attachments'])}\n"
+                                             if m["attachments"] else "") + "\n" + m["body"])
+    return {"ok": True, **m}, text
+
+
+@command("outlook-draft", "write a mail and save it in Drafts - never sends; read back",
+         Arg("to", required=True, help="addresses, separated by ;"),
+         Arg("subject", required=True), Arg("body", default=""), Arg("cc"),
+         Arg("attach", help="file paths, separated by ;"),
+         Arg("show", bool, help="also open it on screen for the person to review"),
+         Arg("start", bool), group="office")
+def cmd_outlook_draft(args):
+    o, ns = _outlook(args.start)
+    files = [f.strip() for f in (args.attach or "").split(";") if f.strip()]
+    for f in files:
+        if not os.path.exists(f):
+            raise WadError("FILE_ERROR", f"attachment not found: {f}")
+
+    def draft():
+        m = o.CreateItem(0)                           # olMailItem
+        m.To, m.Subject, m.Body = args.to, args.subject, args.body.replace("\\n", "\n")
+        if args.cc:
+            m.CC = args.cc
+        for f in files:
+            m.Attachments.Add(os.path.abspath(f))
+        m.Save()
+        back = ns.GetItemFromID(m.EntryID)
+        if back.Subject != args.subject or back.Attachments.Count != len(files):
+            raise WadError("VERIFY_FAILED", "the saved draft does not match what was written")
+        if args.show:
+            m.Display(False)
+        return m.EntryID
+    entry = patient(draft, timeout=30)
+    state.trace("outlook-draft", {"to": args.to, "subject": args.subject, "files": len(files)})
+    return ({"ok": True, "id": entry},
+            f"draft saved (not sent): {args.subject!r} to {args.to}"
+            + (f", {len(files)} attachment(s)" if files else ""))
+
+
+@command("outlook-send", "SEND a saved draft - only when the policy allows sending",
+         Arg("which", positional=True, help="the draft's id (from outlook-draft)"),
+         Arg("start", bool), group="office")
+def cmd_outlook_send(args):
+    from .system import policy
+    if not policy().get("allow_send"):
+        raise WadError("POLICY_DENIED", "sending mail is off",
+                       f'a person can allow it in {state.POLICY_FILE} with "allow_send": true; '
+                       "until then leave the draft for them to send")
+    _, ns = _outlook(args.start)
+
+    def send():
+        m = _item(ns, args.which)
+        subject, to = m.Subject, m.To
+        m.Send()
+        return subject, to
+    subject, to = patient(send, timeout=30)
+    state.trace("outlook-send", {"to": to, "subject": subject})
+    return {"ok": True, "subject": subject, "to": to}, f"SENT {subject!r} to {to}"
+
+
+# ---------------------------------------------------------------------------
+# PowerPoint
+# ---------------------------------------------------------------------------
+LAYOUTS = {"title-content": 2, "title-only": 11, "blank": 12, "title": 1}
+
+
+def _pres(pp, name):
+    if pp.Presentations.Count == 0:
+        raise WadError("NOT_FOUND", "PowerPoint has no presentation open")
+    if not name:
+        return pp.ActivePresentation
+    for i in range(1, pp.Presentations.Count + 1):
+        p = pp.Presentations(i)
+        if name.lower() in p.Name.lower():
+            return p
+    raise WadError("NOT_FOUND", f"no open presentation like {name!r}")
+
+
+def _slide_texts(slide):
+    texts = []
+    for i in range(1, slide.Shapes.Count + 1):
+        sh = slide.Shapes(i)
+        if sh.HasTextFrame and sh.TextFrame.HasText:
+            texts.append(sh.TextFrame.TextRange.Text.replace("\r", "\n"))
+    return texts
+
+
+def _title(slide):
+    try:
+        if slide.Shapes.HasTitle:
+            return slide.Shapes.Title.TextFrame.TextRange.Text
+    except Exception:
+        pass
+    return ""
+
+
+def pres_args():
+    return [Arg("pres", help="presentation name (default: the active one)"),
+            Arg("start", bool, help="start PowerPoint if it is not running")]
+
+
+@command("ppt-read", "the text of every slide (or one), with slide titles",
+         Arg("slide", int, help="only this slide number"), *pres_args(),
+         group="office", readonly=True)
+def cmd_ppt_read(args):
+    pp = app("PowerPoint.Application", args.start)
+
+    def read():
+        p = _pres(pp, args.pres)
+        numbers = [args.slide] if args.slide else range(1, p.Slides.Count + 1)
+        out = []
+        for n in numbers:
+            if not 1 <= n <= p.Slides.Count:
+                raise WadError("NOT_FOUND", f"no slide {n} (there are {p.Slides.Count})")
+            sl = p.Slides(n)
+            out.append({"slide": n, "title": _title(sl), "texts": _slide_texts(sl)})
+        return p.Name, out
+    name, slides = patient(read)
+    lines = [name]
+    for s in slides:
+        lines.append(f"--- slide {s['slide']}: {s['title']}")
+        lines += [t for t in s["texts"] if t != s["title"]]
+    return {"ok": True, "presentation": name, "slides": slides}, "\n".join(lines)
+
+
+@command("ppt-add-slide", "add a slide with a title and body text; read back",
+         Arg("title", required=True), Arg("body", default="", help="lines separated by \\n"),
+         Arg("layout", choices=list(LAYOUTS), default="title-content"),
+         Arg("at", int, help="position (default: the end)"), *pres_args(), group="office")
+def cmd_ppt_add_slide(args):
+    pp = app("PowerPoint.Application", args.start)
+
+    def add():
+        if pp.Presentations.Count == 0 and args.start:
+            pp.Presentations.Add()
+        p = _pres(pp, args.pres)
+        at = args.at or p.Slides.Count + 1
+        sl = p.Slides.Add(at, LAYOUTS[args.layout])
+        if sl.Shapes.HasTitle:
+            sl.Shapes.Title.TextFrame.TextRange.Text = args.title
+        body = args.body.replace("\\n", "\r").replace("\n", "\r")
+        if body:
+            if sl.Shapes.Placeholders.Count < 2:
+                raise WadError("USAGE", f"layout {args.layout!r} has no body placeholder",
+                               "use --layout title-content")
+            sl.Shapes.Placeholders(2).TextFrame.TextRange.Text = body
+        back = p.Slides(at)
+        if _title(back) != args.title:
+            raise WadError("VERIFY_FAILED", "the new slide does not show the title")
+        return p.Name, at, p.Slides.Count
+    name, at, total = patient(add)
+    state.trace("ppt-add-slide", {"pres": name, "at": at, "title": args.title})
+    return ({"ok": True, "slide": at, "slides": total},
+            f"added slide {at} {args.title!r} to {name} ({total} slides) - checked")
+
+
+@command("ppt-replace", "replace text on every slide (shapes and tables); counts and checks",
+         Arg("find", required=True), Arg("replace", required=True, help="the new text"),
+         *pres_args(), group="office")
+def cmd_ppt_replace(args):
+    pp = app("PowerPoint.Application", args.start)
+
+    def run():
+        p = _pres(pp, args.pres)
+        n = 0
+        for si in range(1, p.Slides.Count + 1):
+            sl = p.Slides(si)
+            for i in range(1, sl.Shapes.Count + 1):
+                sh = sl.Shapes(i)
+                if not (sh.HasTextFrame and sh.TextFrame.HasText):
+                    continue
+                tr = sh.TextFrame.TextRange
+                while tr.Find(args.find) is not None and args.find not in args.replace:
+                    tr.Replace(args.find, args.replace)
+                    n += 1
+        left = sum(t.count(args.find) for si in range(1, p.Slides.Count + 1)
+                   for t in _slide_texts(p.Slides(si)))
+        return p.Name, n, left
+    name, n, left = patient(run)
+    if left and args.find not in args.replace:
+        raise WadError("VERIFY_FAILED", f"{left} occurrence(s) of {args.find!r} remain")
+    state.trace("ppt-replace", {"pres": name, "count": n})
+    return {"ok": True, "replaced": n}, f"replaced {n} occurrence(s) in {name} - checked"
+
+
+@command("ppt-save", "save the presentation (or --to a new file: .pptx, .pdf)",
+         Arg("to", help="save as this path instead; .pdf exports a PDF"), *pres_args(),
+         group="office")
+def cmd_ppt_save(args):
+    pp = app("PowerPoint.Application", args.start)
+    target = args.to
+
+    def save():
+        p = _pres(pp, args.pres)
+        if not target:
+            p.Save()
+            return p.FullName
+        full = os.path.abspath(target)
+        if full.lower().endswith(".pdf"):
+            p.SaveAs(full, 32)                        # ppSaveAsPDF
+        else:
+            p.SaveAs(full)
+        return full
+    path = patient(save, timeout=60)
+    return {"ok": True, "path": path}, f"saved {path}"

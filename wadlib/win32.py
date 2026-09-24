@@ -79,6 +79,17 @@ def bring_front(hwnd):
     return u32.GetForegroundWindow() == hwnd
 
 
+def is_hung(hwnd):
+    """Windows' own verdict: the window has not pumped messages for about 5 seconds.
+    Every UIA call into such an app blocks, so ask before touching it."""
+    if not IS_WINDOWS or not hwnd:
+        return False
+    try:
+        return bool(api()[0].IsHungAppWindow(hwnd))
+    except Exception:
+        return False
+
+
 def input_language(hwnd):
     u32 = api()[0]
     thread = u32.GetWindowThreadProcessId(hwnd, None)

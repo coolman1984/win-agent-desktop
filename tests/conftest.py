@@ -26,7 +26,8 @@ from wadlib import cli, state, verify, win32  # noqa: E402
 @pytest.fixture
 def app(monkeypatch):
     parts = fake_uia.build()
-    for f in (state.SNAPSHOT_FILE, state.SHOT_FILE, state.TRACE_FILE, state.POLICY_FILE):
+    for f in (state.SNAPSHOT_FILE, state.SHOT_FILE, state.TRACE_FILE, state.POLICY_FILE,
+              state.CONFIG_FILE):
         if os.path.exists(f):
             os.remove(f)
     typed = []

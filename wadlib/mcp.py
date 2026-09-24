@@ -19,8 +19,10 @@ Loop: `snapshot` (window, -i) -> act on a ref (e12) or a selector (role=Button n
 -> read the reported `changed:` lines -> snapshot again when the UI changed.
 Rules: prefer click/type/select/check (accessibility, no mouse) over headed or xy clicks;
 add `expect` when you know what success looks like; never repeat an action whose effect
-you did not check; for Excel/Word data use excel-*/word-* tools; when the tree is empty
-(games, canvases, remote desktop) use screenshot + ocr + click-text/click-xy.
+you did not check; for Excel/Word/Outlook/PowerPoint use excel-*/word-*/outlook-*/ppt-*;
+for web pages use browser-* (browser-launch first); when the tree is empty (games,
+canvases, remote desktop) use screenshot + ocr + click-text/click-xy, or detect +
+click-mark. Never send mail or submit payments unless the person asked for exactly that.
 Call the `guide` tool once for the full playbook."""
 
 
@@ -41,7 +43,7 @@ def tools():
 
 
 def call(name, arguments):
-    from .cli import execute
+    from .cli import execute_guarded
     c = COMMANDS.get(name)
     if c is None or not c.mcp:
         return {"content": [{"type": "text", "text": f"unknown tool {name!r}"}], "isError": True}
@@ -50,7 +52,7 @@ def call(name, arguments):
     except WadError as e:
         return {"content": [{"type": "text", "text": f"ERROR {e.code}: {e.message}"
                              + (f"\n  hint: {e.hint}" if e.hint else "")}], "isError": True}
-    payload, text = execute(name, ns)
+    payload, text = execute_guarded(name, ns)
     body = json.dumps(payload, ensure_ascii=False, default=str) if ns.json else text
     content = [{"type": "text", "text": body}]
     if c.image and payload.get("ok") and payload.get("path"):

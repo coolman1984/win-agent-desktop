@@ -8,7 +8,8 @@ version = "0.2.0"
 description = "Windows desktop automation for AI agents: accessibility tree, verified actions, MCP server"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = ["uiautomation>=2.0.29", "pywin32>=306; sys_platform == 'win32'", "Pillow>=10"]
+dependencies = ["uiautomation>=2.0.29", "pywin32>=306; sys_platform == 'win32'", "Pillow>=10",
+                "websocket-client>=1.6"]
 
 [project.optional-dependencies]
 ocr = ["winrt-runtime>=2.0", "winrt-Windows.Foundation>=2.0",

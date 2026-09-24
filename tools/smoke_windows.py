@@ -196,12 +196,25 @@ APP = "wad test app"
 
 
 def forms_launch():
+    """Launched while `wad watch` listens: the window opening must arrive as a UIA event."""
+    ctx["watch"] = subprocess.Popen(WAD + ["--json", "watch", "--seconds", "45", "--until", APP,
+                                           "--no-focus"], stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True, encoding="utf-8")
+    time.sleep(2.5)                        # let the watcher register its handlers
     ps1 = os.path.join(ROOT, "tools", "test_app.ps1")
     ctx["forms"] = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                                      "-STA", "-File", ps1])
     out = wad("wait", "--window", APP, "--timeout", "40")
     wad("snapshot", "--window", APP, "-i")
     return out["title"]
+
+
+def forms_watch():
+    stdout, _ = ctx["watch"].communicate(timeout=60)
+    got = json.loads(stdout)
+    assert got["mode"] == "events", got
+    assert any(e["kind"] == "window opened" and APP in e["name"] for e in got["events"]), got
+    return f"{len(got['events'])} events, mode {got['mode']}"
 
 
 def forms_type():
@@ -257,10 +270,80 @@ def forms_hover_and_ocr_click():
     return f"clicked {out['text']!r} at ({out['screen_x']}, {out['screen_y']})"
 
 
+def forms_record():
+    """A 'person' (real, injected input) fills the form while `wad record` watches; the
+    recording must replay on its own."""
+    flow = os.path.join(tempfile.mkdtemp(), "recorded.json")
+    rec = subprocess.Popen(WAD + ["--json", "record", flow, "--window", APP, "--seconds", "40"],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                           encoding="utf-8")
+    time.sleep(3)                          # hooks installed
+    wad("click", "aid=nameBox", "--headed", "--window", APP, "--no-verify")
+    wad("type", "aid=nameBox", "Recorded", "--keys", "--window", APP)
+    wad("click", "role=Button name=Submit", "--headed", "--window", APP, "--no-verify")
+    time.sleep(1.5)
+    wad("record-stop")
+    raw, err = rec.communicate(timeout=60)
+    out = json.loads(raw) if raw.strip().startswith("{") else {"raw": raw, "stderr": err}
+    assert "steps" in out, out
+    steps = out["steps"]
+    typed = [st for st in steps if st["cmd"] == "type" and st.get("text") == "Recorded"]
+    clicked = [st for st in steps if st["cmd"] == "click" and "submit" in st["target"].lower()]
+    assert typed and clicked, steps
+    wad("type", "aid=nameBox", "something else", "--window", APP)
+    replay = wad("batch", flow)
+    wad("wait", "--window", APP, "--name", "Submitted: Recorded", "--timeout", "10")
+    return f"{len(steps)} steps recorded; replay {replay['summary']}"
+
+
+def forms_report():
+    wad("report", "clear")
+    wad("report", "on")
+    try:
+        wad("click", "role=CheckBox name=Subscribe", "--window", APP)
+        wad("type", "aid=nameBox", "Report", "--window", APP)
+    finally:
+        wad("report", "off")
+    out = wad("report", "build", "--out", os.path.join(OUT, "smoke-report.html"))
+    size = os.path.getsize(out["file"])
+    assert out["steps"] == 2 and size > 5000, (out, size)
+    return f"{out['steps']} steps, {size // 1024} KB"
+
+
+def forms_detect_quick():
+    """No vision server on the runner: detect must fall back to OCR words, clickable."""
+    out = wad("detect", "--window", APP, "--marks")
+    assert out["mode"] == "ocr", out
+    ref = next(e["ref"] for e in out["elements"] if e["content"] == "Submit")
+    wad("type", "aid=nameBox", "Eye", "--window", APP)
+    wad("click-mark", ref, "--expect", "Submitted: Eye")
+    return f"{len(out['elements'])} words, clicked {ref}"
+
+
 def forms_close():
     wad("close", "--window", APP)
     wad("wait", "--window", APP, "--gone", "--timeout", "15")
     ctx["forms"].wait(timeout=15)
+
+
+# --- the browser, from the inside --------------------------------------------------
+def browser(name):
+    def run():
+        page = "file:///" + os.path.join(ROOT, "tools", "test_page.html").replace("\\", "/")
+        port = "9444" if name == "edge" else "9445"
+        wad("browser-launch", page, "--browser", name, "--port", port)
+        try:
+            snap = wad("browser-snapshot")
+            assert any(e["name"] == "Email" for e in snap["elements"]), snap["elements"]
+            wad("browser-type", "#email", "ahmed@example.com")
+            wad("browser-click", "text=I agree")
+            wad("browser-click", "text=Send", "--expect", "Hello ahmed@example.com / true")
+            assert wad("browser-click", "text=Locked", ok=False)["code"] == "NOT_ENABLED"
+            wad("browser-screenshot", os.path.join(OUT, f"smoke-{name}.png"))
+        finally:
+            wad("browser-close", ok=False)
+        return f"{len(snap['elements'])} elements"
+    return run
 
 
 def main():
@@ -278,6 +361,7 @@ def main():
                      ("find + wait --target", wait_and_find),
                      ("close without saving", close_without_saving),
                      ("forms: launch test app", forms_launch),
+                     ("watch: window opened arrives as an event", forms_watch),
                      ("forms: type (Unicode, verified)", forms_type),
                      ("forms: check / uncheck", forms_check),
                      ("forms: select in combo box", forms_select),
@@ -286,7 +370,12 @@ def main():
                      ("forms: disabled button refused", forms_disabled),
                      ("forms: submit --expect result", forms_submit),
                      ("forms: hover + OCR click-text", forms_hover_and_ocr_click),
-                     ("forms: close", forms_close)]:
+                     ("record a person, replay it", forms_record),
+                     ("visual step report (on, build, off)", forms_report),
+                     ("smart eye quick mode (OCR) + click-mark", forms_detect_quick),
+                     ("forms: close", forms_close),
+                     ("browser: Edge via DevTools", browser("edge")),
+                     ("browser: Chrome via DevTools", browser("chrome"))]:
         check(name, fn)
         if name == "forms: launch test app" and not results[-1][0]:
             break

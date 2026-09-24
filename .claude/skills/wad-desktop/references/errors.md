@@ -38,6 +38,7 @@ Nothing half-happens silently: when an input guard refuses, nothing was sent.
 | `FOCUS_LOST` | The app could not be brought to the front; nothing was typed/clicked | Something else holds the foreground (a UAC prompt, an elevated window, a fullscreen app). Resolve that - do not retry in a loop |
 | `OCCLUDED` | Another app's window covers the click point; nothing was clicked | Bring the target forward (`focus --window`), move/close what covers it |
 | `LAYOUT_FAILED` | `input-lang` could not switch the window's keyboard layout | Is that layout installed? Settings > Time & language > Language |
+| `APP_HUNG` | The app is not responding (Windows says so, or it did not answer within the watchdog time); wad stopped waiting | Do not retry in a loop: check `windows`, `wait` for it to recover, or ask the person. Slow but healthy apps: raise `WAD_WATCHDOG` (seconds, default 60) |
 | `TIMEOUT` | Waited and it did not happen | Snapshot to see what the app shows instead (an error dialog?) |
 
 ## Office
@@ -49,11 +50,23 @@ Nothing half-happens silently: when an input guard refuses, nothing was sent.
 | `OFFICE_ERROR` | Office rejected the call (bad range, protected sheet...) | Read the message - it is Office's own |
 | `NOT_FOUND` | No such workbook / sheet / document | `excel-info` lists them |
 
+## Browser (browser-* commands)
+
+| Code | Meaning | Do this |
+|---|---|---|
+| `NO_BROWSER` | wad's browser is not running, or has no tab | `browser-launch` (it keeps its own profile) |
+| `BROWSER_ERROR` | The page or the DevTools protocol rejected the call (the page threw) | Read the message; the page may be navigating - `browser-wait` then retry |
+| `NOT_EDITABLE` | `browser-type` target is not a text field | Target the `input`/`textarea` itself (see `browser-snapshot`) |
+
+`ELEMENT_NOT_FOUND`, `AMBIGUOUS_TARGET` (use `--nth`), `BAD_SELECTOR`, `NOT_ENABLED` and
+`VERIFY_FAILED` mean the same on web pages as in apps.
+
 ## Vision, system, setup
 
 | Code | Meaning | Do this |
 |---|---|---|
 | `NO_SCREENSHOT` | `click-xy` without a screenshot to map from | `screenshot` first, or `--screen` for absolute pixels |
+| `DETECTOR_UNAVAILABLE` | `detect` found no OmniParser server | Ask the person to start one (docs/VISION.md), or use `ocr` / `click-text` / the screenshot |
 | `OCR_LANGUAGE` | No OCR engine for that language | Install the language's OCR pack, or omit `--lang` |
 | `MISSING_DEPENDENCY` | An optional package is missing (the hint names it) | `pip install ...` as the hint says |
 | `POLICY_DENIED` | A system command is off, outside the allowed folders, or never allowed | Ask the person; never try to work around it |

@@ -277,3 +277,274 @@ def test_ocr_reads_an_enlarged_copy_and_maps_boxes_back(tmp_path, monkeypatch):
     lines = vision.ocr({"path": str(shot)})
     assert seen["size"] == (800, 600)
     assert lines[0]["box"] == [50, 100, 40, 20] and lines[0]["center"] == [70, 110]
+
+
+def test_batch_heals_a_renamed_button_and_can_save_it(app, run, tmp_path):
+    flow = tmp_path / "f.json"
+    flow.write_text(json.dumps({"steps": [
+        {"cmd": "click", "target": "role=Button name='Save now'", "window": "Notepad"}]}))
+    out = run("batch", str(flow), "--save-healed")
+    assert out["ok"] and out["healed"] == 1
+    assert out["results"][0]["healed"]["new"] == "role=Button aid=SaveButton"
+    saved = json.loads(flow.read_text(encoding="utf-8"))["steps"][0]
+    assert saved["target"] == "role=Button aid=SaveButton"
+
+
+def test_healing_refuses_to_guess_between_close_candidates(app, run, tmp_path):
+    flow = tmp_path / "f.json"
+    flow.write_text(json.dumps([{"cmd": "click", "target": "role=Button name=OKAY",
+                                 "window": "Notepad"}]))
+    out = run("batch", str(flow))
+    assert out["ok"] is False and "no single close match" in out["results"][0]["text"]
+    assert run("batch", str(flow), "--no-heal")["results"][0]["code"] == "ELEMENT_NOT_FOUND"
+
+
+def test_selector_also_searches_the_apps_popups(app, run):
+    run("snapshot", "--window", "Notepad")
+    run("click", "name=Save")
+    out = run("click", "role=Button name=Cancel", "--window", "Untitled - Notepad")
+    assert out["ok"]
+
+
+# --- visual step report ----------------------------------------------------------
+def test_step_report_is_off_by_default_and_records_when_on(app, run, tmp_path, monkeypatch):
+    from PIL import Image, ImageGrab
+    from wadlib import report
+    monkeypatch.setattr(ImageGrab, "grab", lambda bbox=None, all_screens=False:
+                        Image.new("RGB", (bbox[2] - bbox[0], bbox[3] - bbox[1]), "navy"))
+    run("report", "clear")
+    run("snapshot", "--window", "Notepad")
+    run("click", "name=Save")
+    assert run("report", "status")["report"] is False and run("report", "status")["steps"] == 0
+    assert run("report", "build")["code"] == "NOT_FOUND"
+
+    run("report", "on")
+    run("snapshot", "--window", "Notepad")               # read-only: not photographed
+    run("click", "name=Nothing")
+    run("type", "name=Password", "hunter2")
+    run("click", "name=Dead")                            # failures are reported too
+    run("report", "off")
+    run("click", "name=Nothing")
+    out = run("report", "build", "--out", str(tmp_path / "r.html"))
+    assert out["ok"] and out["steps"] == 3
+    page = (tmp_path / "r.html").read_text(encoding="utf-8")
+    assert page.count("data:image/jpeg;base64,") == 3 and "NOT_ENABLED" in page
+    assert "hunter2" not in page and 'class="step bad"' in page
+    assert os.path.isdir(report.report_dir())
+
+
+# --- recorder --------------------------------------------------------------------
+def test_recorder_turns_a_persons_actions_into_replayable_steps(app, run, monkeypatch, tmp_path):
+    from wadlib import record
+    V = fake_uia.PatternId.ValuePattern
+    under = {}
+    monkeypatch.setattr(fake_uia, "ControlFromPoint", lambda x, y: under["ctrl"])
+    rec = record.Recorder()
+
+    under["ctrl"] = app["doc"]                    # click into the editor and type
+    rec.on_click(10, 60, "left", when=1.0)
+    fake_uia.FOCUS[0] = app["doc"]
+    rec.poll_focus()
+    app["doc"].GetPattern(V)._value = "hello مرحبا"
+    rec.on_key(0x48)                              # plain letters: nothing on their own
+    rec.on_key(0x41, {"ctrl"})                    # ctrl+a inside the field: nothing either
+    fake_uia.FOCUS[0] = app["pw"]                 # tab to the password box
+    rec.on_key(0x09)
+    rec.poll_focus()
+    app["pw"].GetPattern(V)._value = "hunter2"
+    under["ctrl"] = app["save"]                   # click Save (flushes the password)
+    rec.on_click(5, 5, "left", when=5.0)
+    rec.on_key(0x53, {"ctrl"})                    # ctrl+s
+    under["ctrl"] = app["wrap"]
+    rec.on_click(5, 5, "left", when=9.0)
+    rec.on_click(5, 5, "left", when=9.2)          # a double click
+    steps = rec.finish()
+
+    assert steps == [
+        {"cmd": "type", "target": "role=Document aid=RichEditD2DPT",
+         "window": "Untitled - Notepad", "text": "hello مرحبا"},
+        {"cmd": "press", "combo": "tab", "window": "Untitled - Notepad"},
+        {"cmd": "type", "target": "role=Edit name=Password", "window": "Untitled - Notepad",
+         "text": "${ENV:WAD_SECRET}"},
+        {"cmd": "click", "target": "role=Button aid=SaveButton", "window": "Untitled - Notepad"},
+        {"cmd": "press", "combo": "ctrl+s", "window": "Untitled - Notepad"},
+        {"cmd": "double-click", "target": "role=CheckBox name='Word wrap'",
+         "window": "Untitled - Notepad"}]
+    assert "hunter2" not in json.dumps(steps)
+
+    fake_uia.build()                              # replays on a fresh app
+    flow = tmp_path / "rec.json"
+    flow.write_text(json.dumps(steps[:1] + steps[3:4]), encoding="utf-8")
+    assert run("batch", str(flow))["ok"]
+
+
+def test_recorder_makes_ambiguous_selectors_unique(app, monkeypatch):
+    from wadlib import record
+    monkeypatch.setattr(fake_uia, "ControlFromPoint", lambda x, y: app["ok2"])
+    rec = record.Recorder()
+    rec.on_click(1, 1)
+    assert rec.finish()[0]["target"] == "role=Button name=OK nth=2"
+
+
+def test_recorder_ignores_other_windows_when_filtered(app, monkeypatch):
+    from wadlib import record
+    other_btn = app["other"].add(fake_uia.Control("Button", "Elsewhere"))
+    monkeypatch.setattr(fake_uia, "ControlFromPoint", lambda x, y: other_btn)
+    rec = record.Recorder(window="notepad")
+    rec.on_click(1, 1)
+    assert rec.finish() == []
+
+
+# --- events ----------------------------------------------------------------------
+def test_watcher_reports_windows_opening_and_closing(app):
+    import threading
+    import time
+    from wadlib import events
+    with events.Watcher() as w:
+        assert w.mode == "polling"                     # no UIA events in the fake
+        dlg = fake_uia.Control("Window", "Confirm", hwnd=1500, pid=100)
+        fake_uia.ROOT.add(dlg)
+        ev = w.get(2)
+        dlg.remove()
+        ev2 = w.get(2)
+    assert (ev["kind"], ev["name"], ev["pid"]) == ("window opened", "Confirm", 100)
+    assert ev2["kind"] == "window closed"
+
+
+def test_wait_wakes_up_when_the_window_appears(app, run):
+    import threading
+    def later():
+        import time
+        time.sleep(0.4)
+        fake_uia.ROOT.add(fake_uia.Control("Window", "Report ready", hwnd=1600))
+    threading.Thread(target=later).start()
+    out = run("wait", "--window", "Report ready", "--timeout", "5")
+    assert out["ok"] and out["title"] == "Report ready"
+
+
+def test_watch_command_stops_on_until(app, run):
+    import threading
+    def later():
+        import time
+        time.sleep(0.3)
+        fake_uia.ROOT.add(fake_uia.Control("Window", "Error: disk full", hwnd=1700))
+    threading.Thread(target=later).start()
+    out = run("watch", "--seconds", "5", "--until", "disk full", "--no-focus")
+    assert out["ok"] and out["events"][-1]["name"] == "Error: disk full"
+
+
+# --- Outlook and PowerPoint (stand-in Office) -------------------------------------
+@pytest.fixture
+def office_fakes(monkeypatch):
+    import fake_office
+    fakes = {"Outlook.Application": fake_office.Outlook(),
+             "PowerPoint.Application": fake_office.PowerPoint()}
+    monkeypatch.setattr(office, "app", lambda progid, start: fakes[progid])
+    return fakes
+
+
+def test_outlook_list_read_and_draft(app, run, office_fakes, tmp_path):
+    out = run("outlook-list")
+    assert [m["subject"] for m in out["mail"]] == ["Report ready", "Lunch?", "Invoice March"]
+    assert [m["subject"] for m in run("outlook-list", "--unread")["mail"]] == ["Lunch?"]
+    assert len(run("outlook-list", "--search", "sara")["mail"]) == 2
+    msg = run("outlook-read", "1")
+    assert msg["attachments"] == ["report.xlsx"] and msg["from"] == "Sara Ali"
+    f = tmp_path / "a.txt"
+    f.write_text("x")
+    d = run("outlook-draft", "--to", "boss@example.com", "--subject", "Status",
+            "--body", "Line 1\\nLine 2", "--attach", str(f))
+    mail = office_fakes["Outlook.Application"].store[d["id"]]
+    assert d["ok"] and mail.Body == "Line 1\nLine 2" and not mail.sent
+
+
+def test_outlook_send_needs_a_persons_permission(app, run, office_fakes):
+    d = run("outlook-draft", "--to", "a@b.c", "--subject", "Hi")
+    assert run("outlook-send", d["id"])["code"] == "POLICY_DENIED"
+    state.write_json(state.POLICY_FILE, {"allow_send": True})
+    assert run("outlook-send", d["id"])["ok"]
+    assert office_fakes["Outlook.Application"].store[d["id"]].sent
+
+
+def test_powerpoint_read_add_replace_save(app, run, office_fakes):
+    out = run("ppt-read")
+    assert [s["title"] for s in out["slides"]] == ["Q3 results", "Next steps"]
+    add = run("ppt-add-slide", "--title", "Risks", "--body", "Supply\\nHiring", "--at", "2")
+    assert add["ok"] and add["slides"] == 3
+    assert run("ppt-read", "--slide", "2")["slides"][0]["texts"] == ["Risks", "Supply\nHiring"]
+    rep = run("ppt-replace", "--find", "Q3", "--replace", "Q4")
+    assert rep["replaced"] == 1 and run("ppt-read", "--slide", "1")["slides"][0]["title"] == "Q4 results"
+    assert run("ppt-save", "--to", "C:/out/deck.pdf")["path"].endswith("deck.pdf")
+    assert run("ppt-read", "--slide", "9")["code"] == "NOT_FOUND"
+
+
+# --- smart eye (OmniParser) ----------------------------------------------------------
+def test_detect_maps_model_boxes_and_click_mark_clicks_there(app, run, monkeypatch):
+    import http.server
+    import threading
+    from PIL import Image
+
+    class Parser(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            assert body["base64_image"]
+            answer = {"parsed_content_list": [
+                {"type": "icon", "bbox": [0.5, 0.5, 0.6, 0.6], "interactivity": True,
+                 "content": "Play button"},
+                {"type": "text", "bbox": [0.0, 0.0, 0.25, 0.1], "interactivity": False,
+                 "content": "Score 120"}], "latency": 0.1}
+            data = json.dumps(answer).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *a):
+            pass
+    server = http.server.HTTPServer(("127.0.0.1", 0), Parser)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    class Grab:
+        @staticmethod
+        def grab(bbox=None, all_screens=False):
+            return Image.new("RGB", (bbox[2] - bbox[0], bbox[3] - bbox[1]), "black")
+    monkeypatch.setattr(vision, "_pil", lambda: (Image, __import__("PIL.ImageDraw").ImageDraw, Grab))
+    monkeypatch.setattr(fake_uia, "ControlFromPoint", lambda x, y: app["main"])
+    url = f"http://127.0.0.1:{server.server_port}"
+    out = run("detect", "--window", "Notepad", "--url", url, "--marks")
+    server.shutdown()
+    assert [e["content"] for e in out["elements"]] == ["Play button", "Score 120"]
+    assert out["elements"][0]["center"] == [440, 330] and out["path"].endswith("-marks.png")
+    assert run("click-mark", "v1")["screen_x"] == 440
+    assert ("click", (440, 330)) in [(e[0], e[1][:2]) for e in fake_uia.LOG]
+
+
+def test_detect_without_a_server_says_what_to_do(app, run, monkeypatch):
+    from PIL import Image
+
+    class Grab:
+        @staticmethod
+        def grab(bbox=None, all_screens=False):
+            return Image.new("RGB", (40, 30), "black")
+    monkeypatch.setattr(vision, "_pil", lambda: (Image, None, Grab))
+    out = run("detect", "--window", "Notepad", "--url", "http://127.0.0.1:9")
+    assert out["code"] == "DETECTOR_UNAVAILABLE" and "docs/VISION.md" in out["hint"]
+
+
+def test_detect_falls_back_to_ocr_words_without_a_server(app, run, monkeypatch):
+    from PIL import Image
+
+    class Grab:
+        @staticmethod
+        def grab(bbox=None, all_screens=False):
+            return Image.new("RGB", (400, 300), "black")
+    monkeypatch.setattr(vision, "_pil", lambda: (Image, None, Grab))
+    monkeypatch.setattr(vision, "DETECT_URL", "http://127.0.0.1:9")
+    monkeypatch.setattr(vision, "ocr", lambda shot, lang=None: [
+        {"text": "New Game", "words": [{"text": "New", "box": [10, 10, 30, 12]},
+                                       {"text": "Game", "box": [44, 10, 40, 12]}]}])
+    monkeypatch.setattr(fake_uia, "ControlFromPoint", lambda x, y: app["main"])
+    out = run("detect", "--window", "Notepad")
+    assert out["mode"] == "ocr" and [e["content"] for e in out["elements"]] == ["New", "Game"]
+    assert run("click-mark", "v2")["screen_x"] == 64
