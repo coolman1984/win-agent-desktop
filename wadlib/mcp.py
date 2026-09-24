@@ -41,7 +41,7 @@ def tools():
 
 
 def call(name, arguments):
-    from .cli import execute
+    from .cli import execute_guarded
     c = COMMANDS.get(name)
     if c is None or not c.mcp:
         return {"content": [{"type": "text", "text": f"unknown tool {name!r}"}], "isError": True}
@@ -50,7 +50,7 @@ def call(name, arguments):
     except WadError as e:
         return {"content": [{"type": "text", "text": f"ERROR {e.code}: {e.message}"
                              + (f"\n  hint: {e.hint}" if e.hint else "")}], "isError": True}
-    payload, text = execute(name, ns)
+    payload, text = execute_guarded(name, ns)
     body = json.dumps(payload, ensure_ascii=False, default=str) if ns.json else text
     content = [{"type": "text", "text": body}]
     if c.image and payload.get("ok") and payload.get("path"):

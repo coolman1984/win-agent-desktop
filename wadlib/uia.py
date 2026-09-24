@@ -10,7 +10,7 @@ from datetime import datetime
 
 import uiautomation as auto
 
-from . import state
+from . import state, win32
 from .registry import WadError
 
 INTERACTIVE_TYPES = {
@@ -76,7 +76,20 @@ def window_of(ctrl):
         cur = parent
 
 
+def responsive(w):
+    """Refuse up front to drive a window Windows itself reports as not responding."""
+    if w is not None and win32.is_hung(w.NativeWindowHandle):
+        raise WadError("APP_HUNG", f"{w.Name!r} is not responding",
+                       "wait for it to recover (`wait --window ... --timeout 30`), or ask the "
+                       "person - never click into a hung app")
+    return w
+
+
 def find_window(title=None, hwnd=None):
+    return responsive(_find_window(title, hwnd))
+
+
+def _find_window(title=None, hwnd=None):
     if hwnd:
         w = auto.ControlFromHandle(int(hwnd))
         if not w:
@@ -380,6 +393,7 @@ def resolve_ref(ref):
     if not ctrl or not alive(ctrl):
         raise WadError("WINDOW_GONE", f"window {snap['window']!r} is closed",
                        "launch the app again and take a new snapshot")
+    responsive(ctrl)
     for ctype, aid, name, index in el["path"]:
         kids = ctrl.GetChildren()
         same = [k for k in kids if k.ControlTypeName == ctype

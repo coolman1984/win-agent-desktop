@@ -46,9 +46,9 @@ def load_steps(path):
          Arg("file", positional=True, help='JSON: [{"cmd": "click", "target": "role=Button '
              'name=OK"}, {"sleep": 0.5}, ...]'),
          Arg("keep-going", bool, help="continue after a failed step"),
-         group="workflow")
+         group="workflow", long=True)
 def cmd_batch(args):
-    from .cli import execute
+    from .cli import execute_guarded as execute
     steps = load_steps(args.file)
     results, failed = [], 0
     for i, step in enumerate(steps, 1):
@@ -188,6 +188,6 @@ def cmd_guide(args):
 
 
 @command("mcp", "serve every command as MCP tools over stdio (for Claude, Cursor, ...)",
-         group="workflow", mcp=False)
+         group="workflow", mcp=False, long=True)
 def cmd_mcp(args):
     raise WadError("USAGE", "mcp is started from the command line: wad mcp")

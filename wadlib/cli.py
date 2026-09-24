@@ -1,6 +1,8 @@
 """Entry point: load every command module, run one command, print or return its result."""
 import json
+import os
 import sys
+import threading
 import time
 
 import uiautomation as auto
@@ -41,6 +43,42 @@ def execute(name, ns):
         return payload, f"ERROR INTERNAL: {payload['message']}\n  hint: {payload['hint']}"
 
 
+WATCHDOG = float(os.environ.get("WAD_WATCHDOG", "60"))
+
+
+def budget(name, ns):
+    """Seconds a command may take before the app is declared hung: the watchdog base
+    plus whatever the command itself was told to wait."""
+    if COMMANDS[name].long:
+        return None
+    own = getattr(ns, "timeout", None)
+    return WATCHDOG + (float(own) if isinstance(own, (int, float)) else 0)
+
+
+def execute_guarded(name, ns):
+    """execute() on a worker thread with a deadline. A UIA call into an app that stopped
+    pumping messages blocks forever; without this, one frozen app freezes the agent."""
+    limit = budget(name, ns)
+    if limit is None:
+        return execute(name, ns)
+    box = {}
+
+    def work():
+        with auto.UIAutomationInitializerInThread():
+            box["result"] = execute(name, ns)
+    t = threading.Thread(target=work, name=f"wad-{name}", daemon=True)
+    t.start()
+    t.join(limit)
+    if "result" in box:
+        return box["result"]
+    payload = {"ok": False, "code": "APP_HUNG", "hung": True,
+               "message": f"{name} got no answer from the app within {limit:.0f}s",
+               "hint": "the app stopped responding; do not retry blindly - check `windows`, "
+                       "wait, or ask the person. Raise WAD_WATCHDOG for slow apps"}
+    state.trace("error", {"command": name, "code": "APP_HUNG", "seconds": limit})
+    return payload, f"ERROR APP_HUNG: {payload['message']}\n  hint: {payload['hint']}"
+
+
 def main(argv=None):
     for stream in (sys.stdout, sys.stdin):
         try:
@@ -53,11 +91,14 @@ def main(argv=None):
         from . import mcp
         return mcp.serve()
     with auto.UIAutomationInitializerInThread():
-        payload, text = execute(args.cmd, args)
+        payload, text = execute_guarded(args.cmd, args)
     if getattr(args, "json", False):
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
     else:
         print(text)
+    if payload.get("hung"):
+        sys.stdout.flush()
+        os._exit(1)          # the stuck thread would also block COM teardown at exit
     return 0 if payload.get("ok", True) else 1
 
 

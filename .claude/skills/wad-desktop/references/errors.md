@@ -38,6 +38,7 @@ Nothing half-happens silently: when an input guard refuses, nothing was sent.
 | `FOCUS_LOST` | The app could not be brought to the front; nothing was typed/clicked | Something else holds the foreground (a UAC prompt, an elevated window, a fullscreen app). Resolve that - do not retry in a loop |
 | `OCCLUDED` | Another app's window covers the click point; nothing was clicked | Bring the target forward (`focus --window`), move/close what covers it |
 | `LAYOUT_FAILED` | `input-lang` could not switch the window's keyboard layout | Is that layout installed? Settings > Time & language > Language |
+| `APP_HUNG` | The app is not responding (Windows says so, or it did not answer within the watchdog time); wad stopped waiting | Do not retry in a loop: check `windows`, `wait` for it to recover, or ask the person. Slow but healthy apps: raise `WAD_WATCHDOG` (seconds, default 60) |
 | `TIMEOUT` | Waited and it did not happen | Snapshot to see what the app shows instead (an error dialog?) |
 
 ## Office
