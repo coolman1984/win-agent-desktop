@@ -124,6 +124,15 @@ def _find_window(title=None, hwnd=None):
     return hits[0]
 
 
+def new_window(title, exclude=()):
+    """The window titled like `title` that is not in `exclude`, or None (one look)."""
+    low = title.lower()
+    fresh = [w for w in top_windows()
+             if low in w.Name.lower() and w.NativeWindowHandle not in exclude]
+    exact = [w for w in fresh if w.Name.lower() == low]
+    return (exact or fresh or [None])[0]
+
+
 def wait_window(title, timeout, exclude=()):
     """Wait for a window titled like `title`; handles in `exclude` (windows that were
     already open) are skipped, so a launch never grabs the user's own copy."""

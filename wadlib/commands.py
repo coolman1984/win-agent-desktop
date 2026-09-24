@@ -10,7 +10,7 @@ import time
 
 import uiautomation as auto
 
-from . import inputs, state, uia, verify, win32
+from . import events, inputs, state, uia, verify, win32
 from .registry import Arg, WadError, command, target_arg, verify_args, window_args
 
 APPS = {
@@ -161,7 +161,10 @@ def cmd_launch(args):
             spawn(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
             how = "store app"
     title = args.title or os.path.splitext(os.path.basename(name))[0]
-    w = uia.wait_window(title, args.timeout, exclude=before)
+    w = events.wait_for(lambda: uia.new_window(title, before), args.timeout)
+    if w is None:
+        raise WadError("TIMEOUT", f"no new window titled like {title!r} within {args.timeout}s",
+                       "pass --title with the real window title (see `wad windows`)")
     state.trace("launch", {"app": name, "hwnd": w.NativeWindowHandle, "via": how})
     return (ok(hwnd=w.NativeWindowHandle, title=w.Name, via=how),
             f"launched {w.Name!r}  hwnd {w.NativeWindowHandle}  ({how})")
@@ -289,7 +292,10 @@ def cmd_wait(args):
                     raise WadError("TIMEOUT", f"window {args.window!r} still open")
                 time.sleep(0.3)
             return ok(), f"window {args.window!r} is gone"
-        w = uia.wait_window(args.window, args.timeout)
+        w = events.wait_for(lambda: uia.new_window(args.window), args.timeout)
+        if w is None:
+            raise WadError("TIMEOUT", f"no window titled like {args.window!r} within "
+                           f"{args.timeout}s", "check the title with `wad windows`")
         return ok(hwnd=w.NativeWindowHandle, title=w.Name), f"window {w.Name!r} is open"
     while True:
         try:

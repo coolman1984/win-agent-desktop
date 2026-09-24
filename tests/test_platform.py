@@ -392,3 +392,41 @@ def test_recorder_ignores_other_windows_when_filtered(app, monkeypatch):
     rec = record.Recorder(window="notepad")
     rec.on_click(1, 1)
     assert rec.finish() == []
+
+
+# --- events ----------------------------------------------------------------------
+def test_watcher_reports_windows_opening_and_closing(app):
+    import threading
+    import time
+    from wadlib import events
+    with events.Watcher() as w:
+        assert w.mode == "polling"                     # no UIA events in the fake
+        dlg = fake_uia.Control("Window", "Confirm", hwnd=1500, pid=100)
+        fake_uia.ROOT.add(dlg)
+        ev = w.get(2)
+        dlg.remove()
+        ev2 = w.get(2)
+    assert (ev["kind"], ev["name"], ev["pid"]) == ("window opened", "Confirm", 100)
+    assert ev2["kind"] == "window closed"
+
+
+def test_wait_wakes_up_when_the_window_appears(app, run):
+    import threading
+    def later():
+        import time
+        time.sleep(0.4)
+        fake_uia.ROOT.add(fake_uia.Control("Window", "Report ready", hwnd=1600))
+    threading.Thread(target=later).start()
+    out = run("wait", "--window", "Report ready", "--timeout", "5")
+    assert out["ok"] and out["title"] == "Report ready"
+
+
+def test_watch_command_stops_on_until(app, run):
+    import threading
+    def later():
+        import time
+        time.sleep(0.3)
+        fake_uia.ROOT.add(fake_uia.Control("Window", "Error: disk full", hwnd=1700))
+    threading.Thread(target=later).start()
+    out = run("watch", "--seconds", "5", "--until", "disk full", "--no-focus")
+    assert out["ok"] and out["events"][-1]["name"] == "Error: disk full"

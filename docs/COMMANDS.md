@@ -7,7 +7,7 @@ ones that build the command line and the MCP tools. Every command also takes
 
 | Group | Commands |
 |---|---|
-| observe | [`windows`](#windows), [`snapshot`](#snapshot), [`find`](#find), [`get`](#get), [`wait`](#wait) |
+| observe | [`watch`](#watch), [`windows`](#windows), [`snapshot`](#snapshot), [`find`](#find), [`get`](#get), [`wait`](#wait) |
 | act | [`click`](#click), [`type`](#type), [`clear`](#clear), [`check`](#check), [`uncheck`](#uncheck), [`expand`](#expand), [`collapse`](#collapse), [`select`](#select) |
 | mouse | [`right-click`](#right-click), [`double-click`](#double-click), [`hover`](#hover), [`drag`](#drag), [`scroll`](#scroll), [`scroll-to`](#scroll-to) |
 | keyboard | [`press`](#press), [`input-lang`](#input-lang), [`clipboard`](#clipboard) |
@@ -19,6 +19,23 @@ ones that build the command line and the MCP tools. Every command also takes
 | workflow | [`record`](#record), [`record-stop`](#record-stop), [`report`](#report), [`batch`](#batch), [`trace`](#trace), [`doctor`](#doctor), [`guide`](#guide), [`mcp`](#mcp) |
 
 ## Observe - see what is on screen
+
+### watch
+
+Listen for a while and report what the desktop did: windows and menus opening/closing, focus moves (UIA events).
+
+```
+wad watch [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--seconds` | number | `10.0` | how long to listen |
+| `--window` `-w` | text |  | only events from this window's app |
+| `--no-focus` | flag |  | leave out focus changes |
+| `--until` | text |  | stop early when an event's name contains this text |
+
+_read-only_
 
 ### windows
 
