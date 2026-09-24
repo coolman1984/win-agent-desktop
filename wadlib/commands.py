@@ -23,6 +23,18 @@ APPS = {
 VALUE_LIARS = {"XLMAIN"}
 
 
+def spawn(cmd):
+    """Start an app fully detached from us. A child that inherits our stdout keeps the
+    pipe open after wad exits (the caller waits forever) and, under `wad mcp`, anything
+    it prints would corrupt the protocol stream."""
+    flags = 0
+    if win32.IS_WINDOWS:
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008        # DETACHED_PROCESS
+    return subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, creationflags=flags,
+                            start_new_session=not win32.IS_WINDOWS)
+
+
 def ok(**payload):
     return {"ok": True, **payload}
 
@@ -131,10 +143,10 @@ def cmd_launch(args):
     name = args.app
     how = None
     if name.lower() in APPS:
-        subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{APPS[name.lower()]}"])
+        spawn(["explorer.exe", f"shell:AppsFolder\\{APPS[name.lower()]}"])
         how = "store app"
     elif os.path.exists(name) or shutil.which(name):
-        subprocess.Popen([shutil.which(name) or name])
+        spawn([shutil.which(name) or name])
         how = "executable"
     else:
         lnk = _start_menu_shortcut(name)
@@ -146,7 +158,7 @@ def cmd_launch(args):
             if not app_id:
                 raise WadError("APP_NOT_FOUND", f"no executable, shortcut or app named {name!r}",
                                "give the full path to the .exe, or the name as shown in Start")
-            subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
+            spawn(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
             how = "store app"
     title = args.title or os.path.splitext(os.path.basename(name))[0]
     w = uia.wait_window(title, args.timeout, exclude=before)

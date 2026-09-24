@@ -13,6 +13,7 @@ ones that build the command line and the MCP tools. Every command also takes
 | keyboard | [`press`](#press), [`input-lang`](#input-lang), [`clipboard`](#clipboard) |
 | windows | [`launch`](#launch), [`focus`](#focus), [`window`](#window), [`close`](#close) |
 | vision | [`screenshot`](#screenshot), [`click-xy`](#click-xy), [`ocr`](#ocr), [`click-text`](#click-text) |
+| browser | [`browser-launch`](#browser-launch), [`browser-tabs`](#browser-tabs), [`browser-open`](#browser-open), [`browser-snapshot`](#browser-snapshot), [`browser-click`](#browser-click), [`browser-type`](#browser-type), [`browser-text`](#browser-text), [`browser-wait`](#browser-wait), [`browser-eval`](#browser-eval), [`browser-screenshot`](#browser-screenshot), [`browser-close`](#browser-close) |
 | office | [`excel-info`](#excel-info), [`excel-read`](#excel-read), [`excel-write`](#excel-write), [`excel-run`](#excel-run), [`word-read`](#word-read), [`word-write`](#word-write) |
 | system | [`shell`](#shell), [`file-read`](#file-read), [`file-write`](#file-write), [`file-list`](#file-list), [`process-list`](#process-list), [`process-kill`](#process-kill) |
 | workflow | [`record`](#record), [`record-stop`](#record-stop), [`report`](#report), [`batch`](#batch), [`trace`](#trace), [`doctor`](#doctor), [`guide`](#guide), [`mcp`](#mcp) |
@@ -513,6 +514,163 @@ wad click-text TEXT [options]
 | `--lang` | text |  | OCR language tag |
 | `--expect` | text |  | fail unless this text appears afterwards |
 | `--timeout` | number | `5.0` |  |
+
+## Browser - Edge / Chrome from the inside (DevTools protocol)
+
+### browser-launch
+
+Start Edge or Chrome with its own profile and a local-only DevTools port, for the browser-* commands.
+
+```
+wad browser-launch [URL] [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| URL | text |  | page to open |
+| `--browser` | edge \| chrome | `edge` |  |
+| `--port` | integer | `9222` |  |
+| `--headless` | flag |  | no visible window |
+| `--exe` | text |  | path to another Chromium-based browser (Brave, Chromium, ...) |
+
+### browser-tabs
+
+List the wad browser's tabs; --use N makes tab N the current one.
+
+```
+wad browser-tabs [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--use` | integer |  | 1-based tab number to make current |
+
+_read-only_
+
+### browser-open
+
+Go to a URL in the current tab (or --new-tab) and wait for it to load.
+
+```
+wad browser-open URL [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| URL | text |  |  |
+| `--new-tab` | flag |  |  |
+| `--expect` | text |  | fail unless this text appears on the page |
+| `--timeout` | number | `15.0` |  |
+
+### browser-snapshot
+
+The page's clickable and fillable elements, with refs (b12).
+
+```
+wad browser-snapshot [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| `--limit` | integer | `300` |  |
+
+_read-only_
+
+### browser-click
+
+Click an element of the page with a real (trusted) mouse event.
+
+```
+wad browser-click TARGET [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| TARGET | text |  | b12 | text=Sign in | a CSS selector |
+| `--nth` | integer |  | which match, when several do |
+| `--expect` | text |  | fail unless this text appears on the page afterwards |
+| `--timeout` | number | `5.0` |  |
+
+### browser-type
+
+Type into a page field like a person (works with React/Angular forms); read back.
+
+```
+wad browser-type TARGET TEXT [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| TARGET | text |  | b12 | text=Email | a CSS selector |
+| TEXT | text |  |  |
+| `--nth` | integer |  | which match, when several do |
+| `--append` | flag |  | add to what is there |
+| `--submit` | flag |  | press Enter afterwards |
+
+### browser-text
+
+The visible text of the page (or of one element).
+
+```
+wad browser-text [TARGET] [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| TARGET | text |  | b12 | text=... | CSS (default: page) |
+| `--max-chars` | integer | `20000` |  |
+
+_read-only_
+
+### browser-wait
+
+Wait until text is on the page (or --gone).
+
+```
+wad browser-wait TEXT [options]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| TEXT | text |  |  |
+| `--gone` | flag |  |  |
+| `--timeout` | number | `10.0` |  |
+
+_read-only_
+
+### browser-eval
+
+Run JavaScript in the page and return its (JSON) result.
+
+```
+wad browser-eval SCRIPT
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| SCRIPT | text |  | an expression; wrap statements in (() => {...})() |
+
+### browser-screenshot
+
+Capture the page as PNG (the viewport).
+
+```
+wad browser-screenshot [OUT]
+```
+
+| Argument | Type | Default | Meaning |
+|---|---|---|---|
+| OUT | text |  |  |
+
+_read-only, MCP result includes the image_
+
+### browser-close
+
+Close the wad browser (and its DevTools port).
+
+```
+wad browser-close
+```
 
 ## Office - Excel and Word through their object model
 

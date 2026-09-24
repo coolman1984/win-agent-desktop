@@ -60,8 +60,8 @@ class Command:
 
 
 COMMANDS = {}
-GROUPS = ["observe", "act", "mouse", "keyboard", "windows", "vision", "office", "system",
-          "workflow"]
+GROUPS = ["observe", "act", "mouse", "keyboard", "windows", "vision", "browser", "office",
+          "system", "workflow"]
 
 
 def command(name, help, *args, group="act", mcp=True, readonly=False, image=False,

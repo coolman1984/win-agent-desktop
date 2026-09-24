@@ -50,6 +50,17 @@ Nothing half-happens silently: when an input guard refuses, nothing was sent.
 | `OFFICE_ERROR` | Office rejected the call (bad range, protected sheet...) | Read the message - it is Office's own |
 | `NOT_FOUND` | No such workbook / sheet / document | `excel-info` lists them |
 
+## Browser (browser-* commands)
+
+| Code | Meaning | Do this |
+|---|---|---|
+| `NO_BROWSER` | wad's browser is not running, or has no tab | `browser-launch` (it keeps its own profile) |
+| `BROWSER_ERROR` | The page or the DevTools protocol rejected the call (the page threw) | Read the message; the page may be navigating - `browser-wait` then retry |
+| `NOT_EDITABLE` | `browser-type` target is not a text field | Target the `input`/`textarea` itself (see `browser-snapshot`) |
+
+`ELEMENT_NOT_FOUND`, `AMBIGUOUS_TARGET` (use `--nth`), `BAD_SELECTOR`, `NOT_ENABLED` and
+`VERIFY_FAILED` mean the same on web pages as in apps.
+
 ## Vision, system, setup
 
 | Code | Meaning | Do this |
